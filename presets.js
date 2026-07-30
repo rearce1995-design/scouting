@@ -1,4 +1,8 @@
 // presets.js — helpers, alias y presets para el builder de ruedas
+// Set completo: 8 posiciones (Arquero, Lateral, Defensor Central, Mediocentro/Pivote,
+// Interior, Mediapunta, Extremo, Delantero) con 2-3 roles cada una + Personalizado.
+
+export const PRESETS = [];
 
 export function M(aliases, label, opts){
   opts = opts || {};
@@ -15,9 +19,10 @@ export function disciplineCat(){
     M(['red cards per 90'], 'Rojas', {invert:true}),
   ]);
 }
+// agrega Disciplina de forma consistente a roles de jugadores de campo (no arqueros)
 export function withDiscipline(cats){ return [...cats, disciplineCat()]; }
 
-/* Alias reutilizables (nombres típicos de un export de Wyscout / tracking) */
+/* Alias reutilizables (nombres tipicos de un export de Wyscout en ingles) */
 export const A = {
   duels: ['duels per 90'], duelsWon: ['duels won, %'],
   defDuels: ['defensive duels per 90'], defDuelsWon: ['defensive duels won, %'],
@@ -62,7 +67,8 @@ export const A = {
   cleanSheets: ['clean sheets'], shotsAgainst: ['shots against per 90'], xGAgainst: ['xg against per 90'],
 };
 
-/* Métricas físicas / tracking */
+/* Alias fisicos / GPS: normalmente NO vienen en un export estandar de Wyscout de liga.
+   Se agrupan en categorias marcadas physical:true para que el usuario las prenda/apague. */
 export const PHYS = {
   height: ['height'],
   maxSpeed: ['max speed'],
@@ -76,8 +82,7 @@ export const PHYS = {
   countHighDecel: ['count high deceleration per 90'],
 };
 
-/* PRESETS — posiciones / roles con categorías y métricas */
-export const PRESETS = [
+PRESETS.push(
   /* ========== 1. ARQUERO (POR) ========== */
   { position:'Arquero', role:'Tradicional / De Cierre', categories:[
     C('Rendimiento bajo palos', [
@@ -90,10 +95,10 @@ export const PRESETS = [
     ]),
     C('Juego aéreo y área chica', [
       M(A.exits, 'Salidas', {wide:true}),
-      M(A.aerialDuelsWon || ['aerial duels won, %'], 'Duelos Aéreos Ganados %'),
+      M(A.aerialDuelsWon, 'Duelos Aéreos Ganados %'),
     ]),
     C('Salida directa', [
-      M(A.accLongPasses || ['accurate long passes, %'], 'Precisión Pase Largo %'),
+      M(A.accLongPasses, 'Precisión Pase Largo %'),
       M(A.avgLongPassLength, 'Longitud Media Pase Largo'),
     ]),
   ]},
@@ -103,14 +108,16 @@ export const PRESETS = [
       M(A.exits, 'Salidas', {wide:true}),
       M(A.saveRate, 'Save Rate %'),
     ]),
-    C('Distribución', [
+    C('Participación y distribución corta', [
       M(A.passes, 'Pases'),
       M(A.accPasses, 'Precisión de Pase %'),
+      M(A.backPassesReceivedGK, 'Retrocesos Recibidos'),
       M(A.accShortMedPasses, 'Precisión Pase Corto/Medio %'),
     ]),
-    C('Juego largo', [
+    C('Salida progresiva', [
+      M(A.forwardPasses, 'Pases Hacia Adelante', {wide:true}),
+      M(A.accForwardPasses, 'Precisión Pase Adelante %'),
       M(A.accLongPasses, 'Precisión Pase Largo %'),
-      M(A.forwardPasses, 'Pases Hacia Adelante'),
     ]),
   ]},
 
@@ -120,6 +127,7 @@ export const PRESETS = [
       M(A.defDuels, 'Duelos Defensivos', {wide:true}),
       M(A.defDuelsWon, 'Duelos Defensivos Ganados %', {wide:true}),
       M(A.aerialDuels, 'Duelos Aéreos'),
+      M(A.aerialDuelsWon, 'Duelos Aéreos Ganados %'),
     ]),
     C('Anticipación y cierre', [
       M(A.padjInterceptions, 'PAdj Intercepciones'),
@@ -129,6 +137,7 @@ export const PRESETS = [
     C('Distribución segura', [
       M(A.accPasses, 'Precisión de Pase %'),
       M(A.accBackPasses, 'Precisión Pase Atrás %'),
+      M(A.accLateralPasses, 'Precisión Pase Lateral %'),
     ]),
     C('Físico', [
       M(PHYS.maxSpeed, 'Velocidad Máxima'),
@@ -140,20 +149,25 @@ export const PRESETS = [
       M(A.crosses, 'Centros', {wide:true}),
       M(A.accCrosses, 'Precisión de Centro %', {wide:true}),
       M(A.deepCompletedCrosses, 'Centros Profundos Completados'),
+      M(A.crossesToGoalieBox, 'Centros al Área Chica'),
     ]),
     C('Ataque y desborde', [
       M(A.progRuns, 'Conducciones Progresivas'),
       M(A.dribbles, 'Regates'),
       M(A.successfulDribbles, 'Regates Exitosos %'),
+      M(A.accelerations, 'Aceleraciones'),
       M(A.touchesBox, 'Toques en Área'),
     ]),
-    C('Creación', [
+    C('Creación / asociación', [
       M(A.keyPasses, 'Pases Clave'),
       M(A.xA, 'xA'),
+      M(A.shotAssists, 'Asistencias de Tiro'),
     ]),
     C('Físico', [
       M(PHYS.totalDistance, 'Distancia Total'),
+      M(PHYS.hiDistance, 'Distancia Alta Intensidad'),
       M(PHYS.sprintingDistance, 'Distancia de Sprint'),
+      M(PHYS.countSprint, 'Cantidad de Sprints'),
     ], {physical:true}),
   ])},
   { position:'Lateral', role:'Invertido (Inverted Full-Back)', categories: withDiscipline([
@@ -161,14 +175,18 @@ export const PRESETS = [
       M(A.passes, 'Pases', {wide:true}),
       M(A.accPasses, 'Precisión de Pase %', {wide:true}),
       M(A.accShortMedPasses, 'Precisión Pase Corto/Medio %'),
-    ]),
-    C('Progresión', [
-      M(A.progPasses, 'Pases Progresivos'),
       M(A.receivedPasses, 'Pases Recibidos'),
     ]),
-    C('Defensa', [
+    C('Progresión de balón', [
+      M(A.progPasses, 'Pases Progresivos', {wide:true}),
+      M(A.accProgPasses, 'Precisión Pase Progresivo %'),
+      M(A.passesFinalThird, 'Pases a Último Tercio'),
+      M(A.accPassesFinalThird, 'Precisión Pase Último Tercio %'),
+    ]),
+    C('Defensa / interior', [
       M(A.defDuelsWon, 'Duelos Defensivos Ganados %'),
       M(A.padjInterceptions, 'PAdj Intercepciones'),
+      M(A.offDuelsWon, 'Duelos Ofensivos Ganados %'),
     ]),
   ])},
 
@@ -179,116 +197,392 @@ export const PRESETS = [
       M(A.defDuelsWon, 'Duelos Defensivos Ganados %', {wide:true}),
       M(A.successfulDefActions, 'Acciones Defensivas Exitosas'),
     ]),
-    C('Juego aéreo', [
+    C('Juego aéreo dominante', [
       M(A.aerialDuels, 'Duelos Aéreos', {wide:true}),
-      M(A.aerialDuelsWon, 'Duelos Aéreos Ganados %'),
+      M(A.aerialDuelsWon, 'Duelos Aéreos Ganados %', {wide:true}),
+      M(A.headGoals, 'Goles de Cabeza'),
     ]),
-    C('Protección de área', [
+    C('Protección del área', [
       M(A.shotsBlocked, 'Tiros Bloqueados'),
       M(A.padjSlidingTackles, 'PAdj Entradas'),
     ]),
     C('Físico', [
       M(PHYS.height, 'Altura'),
       M(PHYS.countHighAccel, 'Aceleraciones Altas'),
+      M(PHYS.countHighDecel, 'Desaceleraciones Altas'),
     ], {physical:true}),
   ])},
   { position:'Defensor Central', role:'De Salida / Líbero con Balón', categories: withDiscipline([
     C('Volumen e iniciación', [
       M(A.passes, 'Pases'),
-      M(A.accPasses, 'Precisión de Pase %'),
-      M(A.passesFinalThird, 'Pases a Último Tercio'),
+      M(A.accPasses, 'Precisión de Pase %', {wide:true}),
+      M(A.receivedPasses, 'Pases Recibidos'),
     ]),
-    C('Progresión', [
+    C('Filtrado y romper líneas', [
+      M(A.forwardPasses, 'Pases Hacia Adelante', {wide:true}),
+      M(A.accForwardPasses, 'Precisión Pase Adelante %'),
       M(A.progPasses, 'Pases Progresivos', {wide:true}),
       M(A.accProgPasses, 'Precisión Pase Progresivo %'),
+      M(A.smartPasses, 'Pases Inteligentes'),
     ]),
-    C('Defensa', [
-      M(A.padjInterceptions, 'PAdj Intercepciones'),
-      M(A.defDuels, 'Duelos Defensivos'),
+    C('Pase largo y salida directa', [
+      M(A.longPasses, 'Pases Largos'),
+      M(A.accLongPasses, 'Precisión Pase Largo %'),
+      M(A.avgLongPassLength, 'Longitud Media Pase Largo'),
+    ]),
+    C('Progresión por conducción', [
+      M(A.progRuns, 'Conducciones Progresivas'),
+      M(A.passesFinalThird, 'Pases a Último Tercio'),
+    ]),
+  ])},
+  { position:'Defensor Central', role:'De Cobertura / Cierre', categories: withDiscipline([
+    C('Posicionamiento e intercepción', [
+      M(A.padjInterceptions, 'PAdj Intercepciones', {wide:true}),
+      M(A.interceptions, 'Intercepciones', {wide:true}),
+      M(A.shotsBlocked, 'Tiros Bloqueados'),
+    ]),
+    C('Efectividad y limpieza', [
+      M(A.defDuelsWon, 'Duelos Defensivos Ganados %'),
+      M(A.aerialDuelsWon, 'Duelos Aéreos Ganados %'),
     ]),
     C('Físico', [
-      M(PHYS.height, 'Altura'),
-      M(PHYS.totalDistance, 'Distancia Total'),
+      M(PHYS.maxSpeed, 'Velocidad Máxima', {wide:true}),
+      M(PHYS.hsrDistance, 'Distancia Media-Alta Intensidad'),
+      M(PHYS.sprintingDistance, 'Distancia de Sprint'),
     ], {physical:true}),
   ])},
 
-  /* ========== 4. MEDIOCAMPO ========== */
-  { position:'Mediocentro', role:'Organizador / Playmaker', categories:[
-    C('Distribución', [
+  /* ========== 4. MEDIOCENTRO / PIVOTE (MCD - 5) ========== */
+  { position:'Mediocentro (Pivote)', role:'Defensivo / Destructor (Anchor)', categories: withDiscipline([
+    C('Presencia y recuperación', [
+      M(A.defDuels, 'Duelos Defensivos', {wide:true}),
+      M(A.defDuelsWon, 'Duelos Defensivos Ganados %', {wide:true}),
+      M(A.successfulDefActions, 'Acciones Defensivas Exitosas'),
+    ]),
+    C('Anticipación y rebote', [
+      M(A.padjInterceptions, 'PAdj Intercepciones', {wide:true}),
+      M(A.aerialDuels, 'Duelos Aéreos'),
+      M(A.aerialDuelsWon, 'Duelos Aéreos Ganados %'),
+    ]),
+    C('Control', [
+      M(A.padjSlidingTackles, 'PAdj Entradas'),
+      M(A.foulsSuffered, 'Faltas Recibidas'),
+    ]),
+    C('Pase de seguridad', [
+      M(A.accShortMedPasses, 'Precisión Pase Corto/Medio %'),
+      M(A.accLateralPasses, 'Precisión Pase Lateral %'),
+    ]),
+  ])},
+  { position:'Mediocentro (Pivote)', role:'Organizador / Regista', categories: withDiscipline([
+    C('Control del ritmo', [
       M(A.passes, 'Pases', {wide:true}),
       M(A.accPasses, 'Precisión de Pase %', {wide:true}),
-      M(A.keyPasses, 'Pases Clave'),
-      M(A.xA, 'xA'),
+      M(A.receivedPasses, 'Pases Recibidos'),
     ]),
-    C('Progresión', [
-      M(A.progPasses, 'Pases Progresivos'),
-      M(A.smartPasses, 'Smart Passes'),
-      M(A.forwardPasses, 'Pases Hacia Adelante'),
+    C('Trazos largos y cambios de frente', [
+      M(A.longPasses, 'Pases Largos'),
+      M(A.accLongPasses, 'Precisión Pase Largo %'),
+      M(A.avgPassLength, 'Longitud Media de Pase'),
     ]),
-    C('Defensa/Recuperación', [
-      M(A.interceptions || A.interceptions, 'Intercepciones'),
-      M(A.defDuels, 'Duelos Defensivos'),
+    C('Pase progresivo y generación', [
+      M(A.progPasses, 'Pases Progresivos', {wide:true}),
+      M(A.accProgPasses, 'Precisión Pase Progresivo %'),
+      M(A.smartPasses, 'Pases Inteligentes'),
+      M(A.secondAssists, 'Segundas Asistencias'),
+      M(A.thirdAssists, 'Terceras Asistencias'),
     ]),
-  ]},
-  { position:'Mediocentro', role:'Recuperador / Box-to-Box', categories:[
-    C('Recuperación', [
-      M(A.defDuels, 'Duelos Defensivos', {wide:true}),
-      M(A.interceptions || A.interceptions, 'Intercepciones'),
-      M(A.slidingTackles, 'Entradas Deslizantes'),
+    C('Salida del acoso', [
+      M(A.offDuelsWon, 'Duelos Ofensivos Ganados %'),
+      M(A.accPassesFinalThird, 'Precisión Pase Último Tercio %'),
     ]),
-    C('Transición', [
-      M(A.progRuns, 'Conducciones Progresivas'),
-      M(A.forwardPasses, 'Pases Hacia Adelante'),
-      M(A.progPasses, 'Pases Progresivos'),
+  ])},
+  { position:'Mediocentro (Pivote)', role:'Cierre / Medio Cierre (Half-Back)', categories: withDiscipline([
+    C('Defensa y repliegue', [
+      M(A.padjInterceptions, 'PAdj Intercepciones', {wide:true}),
+      M(A.defDuelsWon, 'Duelos Defensivos Ganados %', {wide:true}),
+      M(A.aerialDuelsWon, 'Duelos Aéreos Ganados %'),
     ]),
-    C('Aporte ofensivo', [
-      M(A.keyPasses, 'Pases Clave'),
-      M(A.goals, 'Goles'),
-      M(A.assists, 'Asistencias'),
+    C('Salida de 3', [
+      M(A.passes, 'Pases'),
+      M(A.accForwardPasses, 'Precisión Pase Adelante %'),
+      M(A.accLateralPasses, 'Precisión Pase Lateral %'),
     ]),
-  ]},
+    C('Recuperación tras pérdida', [
+      M(A.successfulDefActions, 'Acciones Defensivas Exitosas', {wide:true}),
+      M(A.duelsWon, 'Duelos Ganados %'),
+    ]),
+  ])},
 
-  /* ========== 5. EXTREMO / INTERIOR ========== */
-  { position:'Extremo', role:'Extremo/Interior', categories:[
-    C('Desborde', [
-      M(A.dribbles, 'Regates', {wide:true}),
+  /* ========== 5. INTERIOR (MC - 8) ========== */
+  { position:'Interior', role:'Box-to-Box (Área a Área)', categories: withDiscipline([
+    C('Rendimiento y llegada', [
+      M(A.touchesBox, 'Toques en Área', {wide:true}),
+      M(A.shots, 'Tiros'),
+      M(A.xG, 'xG'),
+      M(A.npGoals, 'Goles sin Penal'),
+    ]),
+    C('Aporte defensivo', [
+      M(A.defDuels, 'Duelos Defensivos'),
+      M(A.defDuelsWon, 'Duelos Defensivos Ganados %'),
+      M(A.padjInterceptions, 'PAdj Intercepciones'),
+    ]),
+    C('Despliegue y conducción', [
+      M(A.progRuns, 'Conducciones Progresivas', {wide:true}),
+      M(A.offDuels, 'Duelos Ofensivos'),
+      M(A.accelerations, 'Aceleraciones'),
+    ]),
+    C('Físico', [
+      M(PHYS.totalDistance, 'Distancia Total'),
+      M(PHYS.runningDistance, 'Distancia de Carrera'),
+      M(PHYS.hiDistance, 'Distancia Alta Intensidad'),
+    ], {physical:true}),
+  ])},
+  { position:'Interior', role:'Organizador / Mezzala', categories: withDiscipline([
+    C('Pase clave y generación', [
+      M(A.keyPasses, 'Pases Clave', {wide:true}),
+      M(A.xA, 'xA', {wide:true}),
+      M(A.shotAssists, 'Asistencias de Tiro'),
+      M(A.passesFinalThird, 'Pases a Último Tercio'),
+      M(A.passesToPenaltyArea, 'Pases al Área'),
+    ]),
+    C('Creatividad y desequilibrio', [
+      M(A.smartPasses, 'Pases Inteligentes'),
+      M(A.accSmartPasses, 'Precisión Pase Inteligente %'),
+      M(A.throughPasses, 'Pases al Espacio'),
       M(A.successfulDribbles, 'Regates Exitosos %'),
-      M(A.progRuns, 'Conducciones Progresivas'),
     ]),
-    C('Creación y finalización', [
-      M(A.keyPasses, 'Pases Clave'),
-      M(A.xA, 'xA'),
-      M(A.shotsOnTarget, 'Precisión Tiros %'),
-      M(A.goals, 'Goles'),
-    ]),
-    C('Centros', [
+    C('Aporte por banda', [
       M(A.crosses, 'Centros'),
       M(A.accCrosses, 'Precisión de Centro %'),
+      M(A.progPasses, 'Pases Progresivos'),
     ]),
-  ]},
+  ])},
+  { position:'Interior', role:'Posicional', categories: withDiscipline([
+    C('Circulación continua', [
+      M(A.passes, 'Pases', {wide:true}),
+      M(A.accPasses, 'Precisión de Pase %', {wide:true}),
+      M(A.accShortMedPasses, 'Precisión Pase Corto/Medio %'),
+      M(A.receivedPasses, 'Pases Recibidos'),
+    ]),
+    C('Eficiencia de pase', [
+      M(A.accForwardPasses, 'Precisión Pase Adelante %'),
+      M(A.accLateralPasses, 'Precisión Pase Lateral %'),
+      M(A.accBackPasses, 'Precisión Pase Atrás %'),
+    ]),
+    C('Mantenimiento y equilibrio', [
+      M(A.padjInterceptions, 'PAdj Intercepciones'),
+      M(A.foulsSuffered, 'Faltas Recibidas'),
+      M(A.offDuelsWon, 'Duelos Ofensivos Ganados %'),
+    ]),
+  ])},
 
-  /* ========== 6. DELANTERO (ST / No.9) ========== */
-  { position:'Delantero', role:'Centrodelantero / Rematador', categories:[
-    C('Finalización', [
+  /* ========== 6. MEDIAPUNTA (MCO - 10) ========== */
+  { position:'Mediapunta', role:'Enganche Tradicional / Creador', categories: withDiscipline([
+    C('Último pase y asistencia', [
+      M(A.keyPasses, 'Pases Clave', {wide:true}),
+      M(A.xA, 'xA', {wide:true}),
+      M(A.shotAssists, 'Asistencias de Tiro'),
+      M(A.assists, 'Asistencias'),
+      M(A.secondAssists, 'Segundas Asistencias'),
+    ]),
+    C('Filtro e invención', [
+      M(A.smartPasses, 'Pases Inteligentes', {wide:true}),
+      M(A.accSmartPasses, 'Precisión Pase Inteligente %'),
+      M(A.throughPasses, 'Pases al Espacio'),
+      M(A.accThroughPasses, 'Precisión Pase al Espacio %'),
+    ]),
+    C('Peligro en área rival', [
+      M(A.passesToPenaltyArea, 'Pases al Área'),
+      M(A.accPassesToPenaltyArea, 'Precisión Pase al Área %'),
+      M(A.deepCompletions, 'Pases en Profundidad'),
+    ]),
+    C('Pelota parada', [
+      M(A.freeKicks, 'Tiros Libres'),
+      M(A.directFreeKicks, 'Tiros Libres Directos'),
+      M(A.corners, 'Córners'),
+    ]),
+  ])},
+  { position:'Mediapunta', role:'De Presión / Segundo Volante (Shadow Striker)', categories: withDiscipline([
+    C('Ofensiva y gol', [
       M(A.goals, 'Goles', {wide:true}),
-      M(A.xG, 'xG'),
-      M(A.shotsOnTarget, 'Tiros a Puerta %'),
+      M(A.npGoals, 'Goles sin Penal'),
+      M(A.xG, 'xG', {wide:true}),
+      M(A.shots, 'Tiros'),
+      M(A.shotsOnTarget, 'Tiros al Arco %'),
+      M(A.goalConversion, 'Conversión %'),
     ]),
-    C('Participación', [
-      M(A.keyPasses, 'Pases Clave'),
-      M(A.xA, 'xA'),
-      M(A.shots, 'Tiros por 90'),
+    C('Presencia en el área', [
+      M(A.touchesBox, 'Toques en Área'),
+      M(A.successfulAttackingActions, 'Acciones Ofensivas Exitosas'),
+      M(A.offDuelsWon, 'Duelos Ofensivos Ganados %'),
     ]),
-    C('Juego aéreo y movilidad', [
-      M(A.headGoals, 'Goles de Cabeza'),
-      M(A.progRuns, 'Conducciones Progresivas'),
+    C('Presión', [
+      M(A.successfulDefActions, 'Acciones Defensivas Exitosas'),
+      M(A.foulsSuffered, 'Faltas Recibidas'),
     ]),
-  ]},
+    C('Físico', [
+      M(PHYS.hiDistance, 'Distancia Alta Intensidad'),
+      M(PHYS.countHighAccel, 'Aceleraciones Altas'),
+    ], {physical:true}),
+  ])},
+  { position:'Mediapunta', role:'Falso / Organizador Avanzado', categories: withDiscipline([
+    C('Asociación y recepción', [
+      M(A.receivedPasses, 'Pases Recibidos', {wide:true}),
+      M(A.passes, 'Pases'),
+      M(A.accPasses, 'Precisión de Pase %'),
+    ]),
+    C('Avanzar el juego', [
+      M(A.passesFinalThird, 'Pases a Último Tercio', {wide:true}),
+      M(A.accPassesFinalThird, 'Precisión Pase Último Tercio %'),
+      M(A.progPasses, 'Pases Progresivos'),
+      M(A.deepCompletions, 'Pases en Profundidad'),
+    ]),
+    C('Retención de balón', [
+      M(A.dribbles, 'Regates'),
+      M(A.successfulDribbles, 'Regates Exitosos %'),
+      M(A.foulsSuffered, 'Faltas Recibidas'),
+    ]),
+  ])},
 
-  /* ========== 7. Preset genérico vacío (custom) ========== */
-  { position:'Custom', role:'Personalizado', custom:true, categories:[
-    /* el preset custom solo aporta categorías vacías para editar */
-    { name: 'Ofensivo', metrics: [] },
-    { name: 'Defensivo', metrics: [] },
+  /* ========== 7. EXTREMO (ED / EI) ========== */
+  { position:'Extremo', role:'Clásico (Winger)', categories: withDiscipline([
+    C('Desborde y centros', [
+      M(A.crosses, 'Centros', {wide:true}),
+      M(A.accCrosses, 'Precisión de Centro %', {wide:true}),
+      M(A.crossesToGoalieBox, 'Centros al Área Chica'),
+      M(A.deepCompletedCrosses, 'Centros Profundos Completados'),
+    ]),
+    C('1v1 y velocidad', [
+      M(A.dribbles, 'Regates', {wide:true}),
+      M(A.successfulDribbles, 'Regates Exitosos %', {wide:true}),
+      M(A.progRuns, 'Conducciones Progresivas'),
+      M(A.accelerations, 'Aceleraciones'),
+    ]),
+    C('Asistencia', [
+      M(A.xA, 'xA'),
+      M(A.shotAssists, 'Asistencias de Tiro'),
+      M(A.keyPasses, 'Pases Clave'),
+    ]),
+    C('Físico', [
+      M(PHYS.maxSpeed, 'Velocidad Máxima', {wide:true}),
+      M(PHYS.sprintingDistance, 'Distancia de Sprint'),
+      M(PHYS.countSprint, 'Cantidad de Sprints'),
+    ], {physical:true}),
+  ])},
+  { position:'Extremo', role:'Invertido / Infiltrado (Inside Forward)', categories: withDiscipline([
+    C('Búsqueda de gol', [
+      M(A.goals, 'Goles', {wide:true}),
+      M(A.npGoals, 'Goles sin Penal'),
+      M(A.xG, 'xG', {wide:true}),
+      M(A.shots, 'Tiros'),
+      M(A.shotsOnTarget, 'Tiros al Arco %'),
+      M(A.goalConversion, 'Conversión %'),
+    ]),
+    C('Desequilibrio interior', [
+      M(A.dribbles, 'Regates', {wide:true}),
+      M(A.successfulDribbles, 'Regates Exitosos %'),
+      M(A.touchesBox, 'Toques en Área'),
+      M(A.offDuelsWon, 'Duelos Ofensivos Ganados %'),
+    ]),
+    C('Pase interno / filoso', [
+      M(A.passesToPenaltyArea, 'Pases al Área'),
+      M(A.accPassesToPenaltyArea, 'Precisión Pase al Área %'),
+      M(A.throughPasses, 'Pases al Espacio'),
+    ]),
+  ])},
+  { position:'Extremo', role:'Creador / Interior Abierto', categories: withDiscipline([
+    C('Generación desde la banda', [
+      M(A.keyPasses, 'Pases Clave', {wide:true}),
+      M(A.smartPasses, 'Pases Inteligentes'),
+      M(A.xA, 'xA', {wide:true}),
+      M(A.passesFinalThird, 'Pases a Último Tercio'),
+    ]),
+    C('Circulación segura', [
+      M(A.passes, 'Pases'),
+      M(A.accPasses, 'Precisión de Pase %'),
+      M(A.accShortMedPasses, 'Precisión Pase Corto/Medio %'),
+    ]),
+    C('Centro preciso de rosca', [
+      M(A.accCrosses, 'Precisión de Centro %', {wide:true}),
+      M(A.deepCompletions, 'Pases en Profundidad'),
+    ]),
+  ])},
+
+  /* ========== 8. DELANTERO CENTRO (DC - 9) ========== */
+  { position:'Delantero', role:'Nueve de Área / Rematador (Poacher / Target Man)', categories: withDiscipline([
+    C('Definición y eficiencia', [
+      M(A.goals, 'Goles', {wide:true}),
+      M(A.npGoals, 'Goles sin Penal'),
+      M(A.xG, 'xG', {wide:true}),
+      M(A.shots, 'Tiros'),
+      M(A.shotsOnTarget, 'Tiros al Arco %'),
+      M(A.goalConversion, 'Conversión %'),
+    ]),
+    C('Presencia y cómputo en área', [
+      M(A.touchesBox, 'Toques en Área', {wide:true}),
+      M(A.headGoals, 'Goles de Cabeza'),
+    ]),
+    C('Fuerza aérea y espaldas', [
+      M(A.aerialDuels, 'Duelos Aéreos'),
+      M(A.aerialDuelsWon, 'Duelos Aéreos Ganados %', {wide:true}),
+      M(A.receivedLongPasses, 'Pases Largos Recibidos'),
+      M(A.offDuelsWon, 'Duelos Ofensivos Ganados %'),
+    ]),
+    C('Efectividad de penales', [
+      M(A.penaltiesTaken, 'Penales Pateados'),
+      M(A.penaltyConversion, 'Conversión de Penales %'),
+    ]),
+  ])},
+  { position:'Delantero', role:'Falso 9 (False 9)', categories: withDiscipline([
+    C('Bajada y recepción', [
+      M(A.receivedPasses, 'Pases Recibidos', {wide:true}),
+      M(A.passes, 'Pases'),
+      M(A.accPasses, 'Precisión de Pase %'),
+    ]),
+    C('Asistencia a extremos/llegadores', [
+      M(A.keyPasses, 'Pases Clave', {wide:true}),
+      M(A.xA, 'xA', {wide:true}),
+      M(A.shotAssists, 'Asistencias de Tiro'),
+      M(A.throughPasses, 'Pases al Espacio'),
+      M(A.accThroughPasses, 'Precisión Pase al Espacio %'),
+    ]),
+    C('Filtrados y conexión', [
+      M(A.passesToPenaltyArea, 'Pases al Área'),
+      M(A.smartPasses, 'Pases Inteligentes'),
+      M(A.deepCompletions, 'Pases en Profundidad'),
+    ]),
+    C('Giro y gambeta', [
+      M(A.successfulDribbles, 'Regates Exitosos %'),
+      M(A.offDuelsWon, 'Duelos Ofensivos Ganados %'),
+      M(A.foulsSuffered, 'Faltas Recibidas'),
+    ]),
+  ])},
+  { position:'Delantero', role:'De Movilidad / Presión (Pressing Forward)', categories: withDiscipline([
+    C('Desmarque y ruptura', [
+      M(A.progRuns, 'Conducciones Progresivas', {wide:true}),
+      M(A.accelerations, 'Aceleraciones'),
+      M(A.touchesBox, 'Toques en Área'),
+      M(A.xG, 'xG', {wide:true}),
+    ]),
+    C('Lucha y duelos ofensivos', [
+      M(A.offDuels, 'Duelos Ofensivos'),
+      M(A.offDuelsWon, 'Duelos Ofensivos Ganados %'),
+      M(A.foulsSuffered, 'Faltas Recibidas'),
+      M(A.successfulAttackingActions, 'Acciones Ofensivas Exitosas'),
+    ]),
+    C('Presión alta (sin pelota)', [
+      M(A.successfulDefActions, 'Acciones Defensivas Exitosas'),
+      M(A.defDuels, 'Duelos Defensivos'),
+    ]),
+    C('Físico', [
+      M(PHYS.hiDistance, 'Distancia Alta Intensidad', {wide:true}),
+      M(PHYS.sprintingDistance, 'Distancia de Sprint'),
+      M(PHYS.countHighAccel, 'Aceleraciones Altas'),
+      M(PHYS.maxSpeed, 'Velocidad Máxima'),
+    ], {physical:true}),
+  ])},
+
+  { position:'Personalizado', role:'Crear mi propia selección', custom:true, categories:[
+    C('Mi categoría', []),
   ]},
-];
+);
