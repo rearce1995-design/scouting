@@ -830,7 +830,14 @@ function generateWheel(){
 function curvedArcText(svg, radius, angle, text, opts={}){
   const originalChars = [...String(text || '')];
   if(!originalChars.length) return;
-  const lowerHalf = normAngle(angle) > 90 && normAngle(angle) < 270;
+  // Debe usar EXACTAMENTE la misma condición que radialText() para decidir
+  // si cada glifo se rota 180°. Antes este umbral estaba desfasado 90°
+  // respecto al de radialText (comparaba el ángulo crudo contra 90/270 en
+  // vez de angle+90), lo que hacía que el orden de letras se invirtiera en
+  // cuadrantes donde la rotación del glifo NO se invertía (y viceversa),
+  // produciendo texto "espejado" tipo "ARUTREBOC" o "sleud laireA".
+  const rotCheck = normAngle(angle + 90);
+  const lowerHalf = rotCheck > 90 && rotCheck < 270;
   // En la mitad inferior el arco cambia de dirección: invertir las letras
   // evita que palabras como "Salida de balón" aparezcan espejadas.
   const chars = lowerHalf ? originalChars.reverse() : originalChars;
