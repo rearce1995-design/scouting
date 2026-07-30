@@ -827,26 +827,20 @@ function generateWheel(){
 
 function curvedCategoryLabel(svg, defs, cat, a1, a2, idx){
   const mid = (a1 + a2) / 2;
-  const spanRad = (a2 - a1) * Math.PI / 180;
-  const lowerHalf = normAngle(mid) > 90 && normAngle(mid) < 270;
-  const pathId = `category-arc-${idx}`;
-  const path = svgEl('path', {
-    id: pathId,
-    d: lowerHalf ? arcPathDir(R_CATLABEL, a2, a1, 0) : arcPathDir(R_CATLABEL, a1, a2, 1),
-    fill:'none'
+  const chars = [...cat.name.toUpperCase()];
+  // Dibujamos cada letra sobre el arco. Evita textPath, que algunos navegadores
+  // deforman al convertir el SVG a PNG en un canvas.
+  const available = Math.max(12, Math.abs(a2 - a1) * 0.72);
+  const natural = Math.max(18, chars.length * 1.65);
+  const span = Math.min(available, natural);
+  const start = mid - span / 2;
+  chars.forEach((char, charIndex) => {
+    const angle = chars.length === 1 ? mid : start + (span * charIndex / (chars.length - 1));
+    const letter = radialText(R_CATLABEL, angle, char, {
+      fill:cat.color, size:10.5, weight:700, spacing:'0.3px'
+    });
+    svg.appendChild(letter);
   });
-  defs.appendChild(path);
-
-  const text = svgEl('text', {
-    fill:cat.color, 'font-size':10.5, 'font-family':"'Inter', sans-serif",
-    'font-weight':700, 'letter-spacing':'1px', 'text-anchor':'middle'
-  });
-  const textPath = svgEl('textPath', {
-    href:`#${pathId}`, 'xlink:href':`#${pathId}`, startOffset:'50%'
-  });
-  textPath.textContent = cat.name.toUpperCase();
-  text.appendChild(textPath);
-  svg.appendChild(text);
 }
 
 function renderWheelSVG(){
