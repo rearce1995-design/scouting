@@ -818,8 +818,27 @@ function generateWheel(){
 function curvedCategoryLabel(svg, defs, cat, a1, a2, idx){
   const mid = (a1 + a2) / 2;
   const spanRad = (a2 - a1) * Math.PI / 180;
-  const maxW = R_CATLABEL * spanRad * 0.9;
-  svg.appendChild(radialText(R_CATLABEL, mid, cat.name.toUpperCase(), { fill: cat.color, size: 10.5, weight:700, spacing:'1px', maxWidth: maxW }));
+  const maxW = R_CATLABEL * spanRad * 0.88;
+  const lowerHalf = normAngle(mid) > 90 && normAngle(mid) < 270;
+  const pathId = `category-arc-${idx}`;
+  const path = svgEl('path', {
+    id: pathId,
+    d: lowerHalf ? arcPathDir(R_CATLABEL, a2, a1, 0) : arcPathDir(R_CATLABEL, a1, a2, 1),
+    fill:'none'
+  });
+  defs.appendChild(path);
+
+  const text = svgEl('text', {
+    fill:cat.color, 'font-size':10.5, 'font-family':"'Inter', sans-serif",
+    'font-weight':700, 'letter-spacing':'1px', 'text-anchor':'middle'
+  });
+  const textPath = svgEl('textPath', {
+    href:`#${pathId}`, 'xlink:href':`#${pathId}`, startOffset:'50%',
+    textLength:maxW.toFixed(2), lengthAdjust:'spacingAndGlyphs'
+  });
+  textPath.textContent = cat.name.toUpperCase();
+  text.appendChild(textPath);
+  svg.appendChild(text);
 }
 
 function renderWheelSVG(){
@@ -1032,7 +1051,7 @@ function renderRankingPanel(){
   return panel;
 }
 
-/* ---- Export PNG con header curvado (textPath) ---- */
+/* ---- Export PNG con encabezado recto ---- */
 async function exportPNG(){
   const svg = document.getElementById('wheel-svg');
   if(!svg){ alert('Nada para exportar'); return; }
@@ -1089,61 +1108,31 @@ async function exportPNG(){
   }
   const subtitleLines = wrapTextApprox(subtitleRaw, 56, 2);
 
-  // dimensiones
-  const W = 700;
-  const WHEEL_H = 700;
-  const HEADER_H = 160;
-  const FOOTER_H = 100;
+  // Conserva todo el viewBox de la rueda, incluidas las etiquetas externas.
+  const W = 790;
+  const WHEEL_H = 790;
+  const HEADER_H = 126;
+  const FOOTER_H = 104;
   const H = HEADER_H + WHEEL_H + FOOTER_H;
 
-  // convertimos el outer <svg> de la rueda a <g transform="translate(0, HEADER_H)">...</g>
-  // removemos el tag <svg ...> y </svg>
-  const wheelGroup = wheelOuter.replace(/^<svg[^>]*>/i, `<g transform="translate(0, ${HEADER_H})">`).replace(/<\/svg>$/i, '</g>');
-
+  // El SVG de la rueda usa viewBox -45 -45 790 790. Al reemplazar su nodo
+  // raíz por un grupo, compensamos ese origen para que no se recorten textos.
+  const wheelGroup = wheelOuter.replace(/^<svg[^>]*>/i, `<g transform="translate(45, ${HEADER_H + 45})">`).replace(/<\/svg>$/i, '</g>');
   const cx = W / 2;
-  const WHEEL_R = WHEEL_H / 2;
-  const radiusTitle = WHEEL_R + 62;
-  const radiusSub1  = WHEEL_R + 44;
-  const radiusSub2  = WHEEL_R + 28;
-  const leftX = 40;
-  const rightX = W - 40;
-
-  function makeArcPath(rx, ry, leftX, y, rightX){
-    return `M ${leftX} ${y} A ${rx} ${ry} 0 0 1 ${rightX} ${y}`;
-  }
-
-  const yTitle = HEADER_H + WHEEL_R - radiusTitle;
-  const ySub1  = HEADER_H + WHEEL_R - radiusSub1;
-  const ySub2  = HEADER_H + WHEEL_R - radiusSub2;
-  const arcTitleD = makeArcPath(radiusTitle, radiusTitle, leftX, yTitle, rightX);
-  const arcSub1D  = makeArcPath(radiusSub1, radiusSub1, leftX, ySub1, rightX);
-  const arcSub2D  = makeArcPath(radiusSub2, radiusSub2, leftX, ySub2, rightX);
 
   const wrapper = `
     <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
       <rect x="0" y="0" width="${W}" height="${H}" fill="#0A0E17"/>
-      <defs>
-        <path id="arcTitle" d="${arcTitleD}" />
-        <path id="arcSub1"  d="${arcSub1D}" />
-        <path id="arcSub2"  d="${arcSub2D}" />
-      </defs>
-
-      ${ titleText ? `<text font-family="Space Grotesk, sans-serif" font-weight="700" font-size="30" fill="#C9A353">
-          <textPath href="#arcTitle" xlink:href="#arcTitle" startOffset="50%" text-anchor="middle">${escapeXml(titleText)}</textPath>
-        </text>` : '' }
-
-      ${ subtitleLines[0] ? `<text font-family="Inter, sans-serif" font-weight="600" font-size="14" fill="#9AA3B5">
-          <textPath href="#arcSub1" xlink:href="#arcSub1" startOffset="50%" text-anchor="middle">${escapeXml(subtitleLines[0])}</textPath>
-        </text>` : '' }
-      ${ subtitleLines[1] ? `<text font-family="Inter, sans-serif" font-weight="600" font-size="14" fill="#9AA3B5">
-          <textPath href="#arcSub2" xlink:href="#arcSub2" startOffset="50%" text-anchor="middle">${escapeXml(subtitleLines[1])}</textPath>
-        </text>` : '' }
+      ${ titleText ? `<text x="${cx}" y="47" text-anchor="middle" font-family="Space Grotesk, sans-serif" font-weight="700" font-size="30" fill="#C9A353">${escapeXml(titleText)}</text>` : '' }
+      ${ subtitleLines[0] ? `<text x="${cx}" y="76" text-anchor="middle" font-family="Inter, sans-serif" font-weight="600" font-size="14" fill="#9AA3B5">${escapeXml(subtitleLines[0])}</text>` : '' }
+      ${ subtitleLines[1] ? `<text x="${cx}" y="96" text-anchor="middle" font-family="Inter, sans-serif" font-weight="600" font-size="14" fill="#9AA3B5">${escapeXml(subtitleLines[1])}</text>` : '' }
+      <path d="M 58 ${HEADER_H - 12} H ${W - 58}" stroke="#C9A353" stroke-opacity="0.55" stroke-width="1"/>
 
       ${wheelGroup}
 
-      <text x="${cx}" y="${HEADER_H + WHEEL_H + 24}" text-anchor="middle" fill="#B6935C" font-family="Inter, sans-serif" font-weight="600" font-size="12">${escapeXml(bio1)}</text>
-      <text x="${cx}" y="${HEADER_H + WHEEL_H + 44}" text-anchor="middle" fill="#8B8F9C" font-family="Inter, sans-serif" font-weight="500" font-size="12">${escapeXml(bio2)}</text>
-      <text x="${cx}" y="${HEADER_H + WHEEL_H + 64}" text-anchor="middle" fill="#565B68" font-family="Inter, sans-serif" font-weight="400" font-size="11">${escapeXml(genDate)}</text>
+      <text x="${cx}" y="${HEADER_H + WHEEL_H + 30}" text-anchor="middle" fill="#B6935C" font-family="Inter, sans-serif" font-weight="600" font-size="12">${escapeXml(bio1)}</text>
+      <text x="${cx}" y="${HEADER_H + WHEEL_H + 52}" text-anchor="middle" fill="#8B8F9C" font-family="Inter, sans-serif" font-weight="500" font-size="12">${escapeXml(bio2)}</text>
+      <text x="${cx}" y="${HEADER_H + WHEEL_H + 76}" text-anchor="middle" fill="#565B68" font-family="Inter, sans-serif" font-weight="400" font-size="11">${escapeXml(genDate)}</text>
     </svg>
   `;
 
