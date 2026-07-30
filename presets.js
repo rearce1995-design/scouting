@@ -63,9 +63,31 @@ export const PHYS = {
 
 const W = (key, label, opts) => M(A[key], label, opts);
 const G = (key, label, opts) => M(PHYS[key], label, opts);
+const SECTION_LABELS = {
+  'Portero': ['Atajadas y cobertura', 'Distribución', 'Juego aéreo y recuperación'],
+  'Central': ['Defensa y duelos', 'Salida de balón', 'Cobertura'],
+  'Lateral': ['Defensa y recuperación', 'Progresión', 'Creación y profundidad'],
+  'Mediocentro Defensivo': ['Recuperación y duelos', 'Distribución', 'Control'],
+  'Interior': ['Equilibrio y recuperación', 'Progresión', 'Llegada y creación'],
+  'Mediapunta': ['Creación', 'Progresión y desequilibrio', 'Llegada al área'],
+  'Extremo': ['Desborde', 'Creación y profundidad', 'Finalización'],
+  'Delantero': ['Finalización', 'Juego asociativo', 'Duelos y presión'],
+};
+
+function sectionsFor(position, metrics) {
+  const labels = SECTION_LABELS[position] || ['Bloque 1', 'Bloque 2', 'Bloque 3'];
+  const firstEnd = Math.ceil(metrics.length / 3);
+  const secondEnd = Math.ceil(metrics.length * 2 / 3);
+  return [
+    C(labels[0], metrics.slice(0, firstEnd)),
+    C(labels[1], metrics.slice(firstEnd, secondEnd)),
+    C(labels[2], metrics.slice(secondEnd)),
+  ].filter(section => section.metrics.length);
+}
+
 const role = (position, name, wyscout, gps) => ({
   position, role:name,
-  categories: [C('Wyscout', wyscout), C('GPS', gps, { physical:true })],
+  categories: [...sectionsFor(position, wyscout), C('GPS', gps, { physical:true })],
 });
 
 PRESETS.push(

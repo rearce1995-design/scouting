@@ -17,12 +17,13 @@ const state = {
   teamCol: null,
   posCol: null,
   minutesCol: null,
+  ageCol: null,
   filters: [],
   categories: [],
   selectedRow: null,
   meta: {
     displayName: '', groupLabel: 'vs. jugadores del grupo', competition: '',
-    club: '', season: '', flag: '', centerLabel: '', bio1: '', bio2: ''
+    club: '', season: '', flag: '', centerLabel: '', bio1: '', bio2: '', age: ''
   },
   presetUI: { position: '', role: '', includePhysical: false },
   activeRanking: null // { catName, label, col, invert }
@@ -127,6 +128,7 @@ async function ingestRows(json){
   state.teamCol = findCol(['team','equipo','club']) || state.teamCol;
   state.posCol = findCol(['position','posición','posicion','pos']) || state.posCol;
   state.minutesCol = findCol(['minutes played','minutos','minutes','mins']) || state.minutesCol;
+  state.ageCol = findCol(['age','edad']) || state.ageCol;
 }
 
 function numVal(row, col){
@@ -197,6 +199,13 @@ function fmtVal(v){
   const n = typeof v === 'number' ? v : parseFloat(v);
   if(!isFinite(n)) return String(v);
   return (Math.round(n*100)/100).toString();
+}
+
+function formatPlayerTitle(){
+  const name = String(state.meta.displayName || '').trim();
+  const age = String(state.meta.age || '').trim();
+  if(!name) return '—';
+  return `${name.toUpperCase()}${age ? ` (${age})` : ''}`;
 }
 
 /* ========================================================================
@@ -637,8 +646,9 @@ function buildStep4(){
       const idx = e.target.value === '' ? -1 : parseInt(e.target.value,10);
       state.selectedRow = idx >= 0 ? sorted[idx] : null;
       if(state.selectedRow){
-        state.meta.displayName = String(state.selectedRow[state.playerCol] || '');
-        if(state.teamCol) state.meta.club = String(state.selectedRow[state.teamCol] || state.meta.club);
+      state.meta.displayName = String(state.selectedRow[state.playerCol] || '');
+      if(state.teamCol) state.meta.club = String(state.selectedRow[state.teamCol] || state.meta.club);
+      state.meta.age = state.ageCol ? String(state.selectedRow[state.ageCol] ?? '').trim() : '';
       }
       renderSidebar();
     }});
@@ -818,7 +828,6 @@ function generateWheel(){
 function curvedCategoryLabel(svg, defs, cat, a1, a2, idx){
   const mid = (a1 + a2) / 2;
   const spanRad = (a2 - a1) * Math.PI / 180;
-  const maxW = R_CATLABEL * spanRad * 0.88;
   const lowerHalf = normAngle(mid) > 90 && normAngle(mid) < 270;
   const pathId = `category-arc-${idx}`;
   const path = svgEl('path', {
@@ -833,8 +842,7 @@ function curvedCategoryLabel(svg, defs, cat, a1, a2, idx){
     'font-weight':700, 'letter-spacing':'1px', 'text-anchor':'middle'
   });
   const textPath = svgEl('textPath', {
-    href:`#${pathId}`, 'xlink:href':`#${pathId}`, startOffset:'50%',
-    textLength:maxW.toFixed(2), lengthAdjust:'spacingAndGlyphs'
+    href:`#${pathId}`, 'xlink:href':`#${pathId}`, startOffset:'50%'
   });
   textPath.textContent = cat.name.toUpperCase();
   text.appendChild(textPath);
@@ -942,7 +950,7 @@ function renderMain(){
   // header
   const headerRow = el('div', {style:'display:flex;justify-content:space-between;align-items:flex-start;padding:4px 10px 14px;'});
   const titleBlock = el('div', {}, [
-    el('h2', {text: state.meta.displayName || '—', style:'margin:0;font-family:var(--font-display);font-size:28px;font-weight:700;'}),
+    el('h2', {text: formatPlayerTitle(), style:'margin:0;font-family:var(--font-display);font-size:28px;font-weight:700;'}),
     el('div', {text: `Percentile Rank ${state.meta.groupLabel || ''} · ${state.meta.competition || ''} · ${state.meta.club || ''} · ${state.meta.season || ''}`.replace(/\s*·\s*(?=·|$)/g,''),
       style:'color:var(--gold);font-size:12.5px;margin-top:6px;font-weight:600;'})
   ]);
@@ -1061,17 +1069,7 @@ async function exportPNG(){
   const serializer = new XMLSerializer();
   const wheelOuter = serializer.serializeToString(svg);
 
-  // extraer edad
-  const getAge = () => {
-    if(state.meta.age) return String(state.meta.age).trim();
-    const b = state.meta.bio2 || '';
-    const m = String(b).match(/edad[:\s]*([0-9]{1,3})/i) || String(b).match(/(\b[0-9]{1,3})\s*(años|yrs|yo|yrs\.)/i);
-    return m ? String(m[1]) : '';
-  };
-  const age = getAge();
-
-  const name = (state.meta.displayName || '').toString();
-  const titleText = name ? (age ? `${name} - ${age}` : name) : '';
+  const titleText = formatPlayerTitle();
   const club = state.meta.club || '';
   const pos = state.presetUI.position || '';
   const role = state.presetUI.role || '';
@@ -1163,7 +1161,7 @@ async function exportPNG(){
 /* ---- Guardar / cargar configuración (categorías, métricas, filtros, meta) ---- */
 function exportConfig(){
   const cfg = {
-    playerCol: state.playerCol, teamCol: state.teamCol, posCol: state.posCol, minutesCol: state.minutesCol,
+    playerCol: state.playerCol, teamCol: state.teamCol, posCol: state.posCol, minutesCol: state.minutesCol, ageCol: state.ageCol,
     filters: state.filters, categories: state.categories, meta: state.meta
   };
   const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
@@ -1180,7 +1178,7 @@ function importConfig(file){
       // validación mínima
       if(cfg && typeof cfg === 'object'){
         Object.assign(state, {
-          playerCol: cfg.playerCol, teamCol: cfg.teamCol, posCol: cfg.posCol, minutesCol: cfg.minutesCol,
+          playerCol: cfg.playerCol, teamCol: cfg.teamCol, posCol: cfg.posCol, minutesCol: cfg.minutesCol, ageCol: cfg.ageCol || state.ageCol,
           filters: cfg.filters || [], categories: cfg.categories || [], meta: cfg.meta || state.meta
         });
         refreshAll();
