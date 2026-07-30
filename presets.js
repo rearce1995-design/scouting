@@ -25,7 +25,14 @@ export const A = {
   exits: ['exits per 90'], aerialDuels: ['aerial duels per 90'], aerialDuelsWon: ['aerial duels won, %', 'aerial duels won %'],
   passes: ['passes per 90', 'passes'], accPasses: ['accurate passes, %', 'accurate passes %'],
   longPasses: ['long passes per 90', 'long passes'], accLongPasses: ['accurate long passes, %', 'accurate long passes %'],
+  // Wyscout no exporta "Recoveries" ni "Clearances" como columnas propias.
+  // Se mantienen estos alias por si algún export externo sí las trae, pero
+  // los presets ya no los usan por defecto (ver padjInterceptions / padjSlidingTackles).
   recoveries: ['recoveries per 90', 'recoveries'],
+  padjInterceptions: ['padj interceptions'],
+  padjSlidingTackles: ['padj sliding tackles'],
+  shotsAgainst: ['shots against per 90', 'shots against'],
+  cleanSheetsCount: ['clean sheets'],
   defActionsOutsideArea: ['defensive actions outside area per 90', 'defensive actions outside area'],
   progPasses: ['progressive passes per 90', 'progressive passes'], accProgPasses: ['accurate progressive passes, %', 'accurate progressive passes %'],
   passesFinalThird: ['passes to final third per 90', 'passes to final third'],
@@ -97,66 +104,66 @@ const role = (position, name, wyscout, gps) => ({
 
 PRESETS.push(
   role('Portero', 'Portero Tradicional', [
-    W('saveRate', 'Save %'), W('prevGoals', 'Goals prevented', {wide:true}), W('saves', 'Saves per 90'),
-    W('cleanSheets', 'Clean sheets %'), W('exits', 'Exits per 90'), W('aerialDuelsWon', 'Aerial duels won %'),
+    W('saveRate', 'Save %'), W('prevGoals', 'Goals prevented', {wide:true}), W('shotsAgainst', 'Shots against'),
+    W('cleanSheetsCount', 'Clean sheets'), W('exits', 'Exits per 90'), W('aerialDuelsWon', 'Aerial duels won %'),
     W('accPasses', 'Accurate passes %'), W('longPasses', 'Long passes per 90'), W('accLongPasses', 'Accurate long passes %'),
-    W('passes', 'Passes per 90'), W('recoveries', 'Recoveries per 90'),
+    W('passes', 'Passes per 90'), W('padjInterceptions', 'PAdj Interceptions'),
   ], [G('maxSpeed', 'Max Speed'), G('hiDistance', 'HI Distance'), G('countHighAccel', 'Count High Accelerations'), G('sprintingDistance', 'Sprint Distance')]),
   role('Portero', 'Portero Líbero', [
-    W('defActionsOutsideArea', 'Defensive actions outside area'), W('exits', 'Exits per 90'), W('progPasses', 'Progressive passes'),
+    W('aerialDuelsWon', 'Aerial duels won %'), W('exits', 'Exits per 90'), W('progPasses', 'Progressive passes'),
     W('passesFinalThird', 'Passes to final third'), W('longPasses', 'Long passes per 90'), W('accLongPasses', 'Accurate long passes %'),
-    W('accPasses', 'Accurate passes %'), W('passes', 'Passes per 90'), W('recoveries', 'Recoveries'),
+    W('accPasses', 'Accurate passes %'), W('passes', 'Passes per 90'), W('padjInterceptions', 'PAdj Interceptions'),
     W('prevGoals', 'Goals prevented'), W('saveRate', 'Save %'),
   ], [G('maxSpeed', 'Max Speed'), G('sprintingDistance', 'Sprint Distance'), G('hiDistance', 'HI Distance'), G('accelerations', 'Accelerations')]),
 
   role('Central', 'Central Defensivo', [
     W('successfulDefActions', 'Successful defensive actions'), W('defDuels', 'Defensive duels'), W('defDuelsWon', 'Defensive duels won %'),
     W('aerialDuels', 'Aerial duels'), W('aerialDuelsWon', 'Aerial duels won %'), W('interceptions', 'Interceptions'),
-    W('recoveries', 'Recoveries'), W('clearances', 'Clearances'), W('blocks', 'Blocks'), W('passes', 'Passes per 90'), W('accPasses', 'Accurate passes %'),
+    W('padjInterceptions', 'PAdj Interceptions'), W('padjSlidingTackles', 'PAdj Sliding tackles'), W('blocks', 'Blocks'), W('passes', 'Passes per 90'), W('accPasses', 'Accurate passes %'),
   ], [G('hiDistance', 'HI Distance'), G('sprintingDistance', 'Sprint Distance'), G('maxSpeed', 'Max Speed'), G('countHighAccel', 'High Accelerations')]),
   role('Central', 'Central Constructor', [
     W('progPasses', 'Progressive passes'), W('accProgPasses', 'Accurate progressive passes %'), W('passesFinalThird', 'Passes to final third'),
     W('forwardPasses', 'Forward passes'), W('smartPasses', 'Smart passes'), W('longPasses', 'Long passes'),
     W('accLongPasses', 'Accurate long passes %'), W('accPasses', 'Accurate passes %'), W('defDuelsWon', 'Defensive duels won %'),
-    W('interceptions', 'Interceptions'), W('recoveries', 'Recoveries'),
+    W('interceptions', 'Interceptions'), W('padjInterceptions', 'PAdj Interceptions'),
   ], [G('hiDistance', 'HI Distance'), G('sprintingDistance', 'Sprint Distance'), G('maxSpeed', 'Max Speed'), G('countHighAccel', 'High Accelerations')]),
 
   role('Lateral', 'Lateral Clásico', [
     W('successfulDefActions', 'Successful defensive actions'), W('defDuelsWon', 'Defensive duels won %'), W('interceptions', 'Interceptions'),
-    W('recoveries', 'Recoveries'), W('progRuns', 'Progressive runs'), W('progPasses', 'Progressive passes'), W('crosses', 'Crosses'),
+    W('padjInterceptions', 'PAdj Interceptions'), W('progRuns', 'Progressive runs'), W('progPasses', 'Progressive passes'), W('crosses', 'Crosses'),
     W('accCrosses', 'Accurate crosses %'), W('deepCompletedCrosses', 'Deep completed crosses'), W('passesFinalThird', 'Passes to final third'), W('xA', 'xA'),
   ], [G('maxSpeed', 'Max Speed'), G('sprintingDistance', 'Sprint Distance'), G('hiDistance', 'HI Distance'), G('countHighAccel', 'High Accelerations')]),
   role('Lateral', 'Carrilero', [
-    W('progRuns', 'Progressive runs'), W('progPasses', 'Progressive passes'), W('touchesFinalThird', 'Touches in final third'),
+    W('progRuns', 'Progressive runs'), W('progPasses', 'Progressive passes'), W('passesFinalThird', 'Passes to final third'),
     W('deepCompletions', 'Deep completions'), W('crosses', 'Crosses'), W('accCrosses', 'Accurate crosses %'),
     W('crossesToGoalieBox', 'Crosses to goalie box'), W('keyPasses', 'Key passes'), W('xA', 'xA'), W('shotAssists', 'Shot assists'), W('successfulDribbles', 'Successful dribbles %'),
   ], [G('maxSpeed', 'Max Speed'), G('sprintingDistance', 'Sprint Distance'), G('hiDistance', 'HI Distance'), G('countHighAccel', 'High Accelerations')]),
   role('Lateral', 'Lateral Invertido', [
     W('passes', 'Passes per 90'), W('accPasses', 'Accurate passes %'), W('progPasses', 'Progressive passes'),
     W('accProgPasses', 'Accurate progressive passes %'), W('smartPasses', 'Smart passes'), W('passesFinalThird', 'Passes to final third'),
-    W('throughPasses', 'Through passes'), W('recoveries', 'Recoveries'), W('successfulDefActions', 'Successful defensive actions'), W('interceptions', 'Interceptions'), W('progRuns', 'Progressive runs'),
+    W('throughPasses', 'Through passes'), W('padjInterceptions', 'PAdj Interceptions'), W('successfulDefActions', 'Successful defensive actions'), W('interceptions', 'Interceptions'), W('progRuns', 'Progressive runs'),
   ], [G('hiDistance', 'HI Distance'), G('sprintingDistance', 'Sprint Distance'), G('maxSpeed', 'Max Speed'), G('countHighAccel', 'High Accelerations')]),
 
   role('Mediocentro Defensivo', 'Recuperador', [
     W('successfulDefActions', 'Successful defensive actions'), W('defDuelsWon', 'Defensive duels won %'), W('interceptions', 'Interceptions'),
-    W('recoveries', 'Recoveries'), W('slidingTackles', 'Sliding tackles'), W('aerialDuelsWon', 'Aerial duels won %'),
+    W('padjInterceptions', 'PAdj Interceptions'), W('slidingTackles', 'Sliding tackles'), W('aerialDuelsWon', 'Aerial duels won %'),
     W('progPasses', 'Progressive passes'), W('accPasses', 'Accurate passes %'), W('longPasses', 'Long passes'), W('accLongPasses', 'Accurate long passes %'), W('fouls', 'Fouls', {invert:true}),
   ], [G('hiDistance', 'HI Distance'), G('sprintingDistance', 'Sprint Distance'), G('maxSpeed', 'Max Speed'), G('countHighAccel', 'High Accelerations')]),
   role('Mediocentro Defensivo', 'Regista', [
     W('passes', 'Passes'), W('accPasses', 'Accurate passes %'), W('progPasses', 'Progressive passes'), W('accProgPasses', 'Accurate progressive passes %'),
     W('passesFinalThird', 'Passes to final third'), W('smartPasses', 'Smart passes'), W('throughPasses', 'Through passes'), W('longPasses', 'Long passes'),
-    W('accLongPasses', 'Accurate long passes %'), W('recoveries', 'Recoveries'), W('interceptions', 'Interceptions'),
+    W('accLongPasses', 'Accurate long passes %'), W('padjInterceptions', 'PAdj Interceptions'), W('interceptions', 'Interceptions'),
   ], [G('hiDistance', 'HI Distance'), G('sprintingDistance', 'Sprint Distance'), G('maxSpeed', 'Max Speed'), G('countHighAccel', 'High Accelerations')]),
 
   role('Interior', 'Box to Box', [
-    W('successfulDefActions', 'Successful defensive actions'), W('recoveries', 'Recoveries'), W('progRuns', 'Progressive runs'),
+    W('successfulDefActions', 'Successful defensive actions'), W('padjInterceptions', 'PAdj Interceptions'), W('progRuns', 'Progressive runs'),
     W('progPasses', 'Progressive passes'), W('xG', 'xG'), W('goals', 'Goals'), W('xA', 'xA'), W('keyPasses', 'Key passes'),
     W('shotAssists', 'Shot assists'), W('touchesBox', 'Touches in box'), W('successfulDribbles', 'Successful dribbles %'),
   ], [G('hiDistance', 'HI Distance'), G('sprintingDistance', 'Sprint Distance'), G('maxSpeed', 'Max Speed'), G('countHighAccel', 'High Accelerations')]),
   role('Interior', 'Organizador', [
     W('passes', 'Passes'), W('accPasses', 'Accurate passes %'), W('progPasses', 'Progressive passes'), W('accProgPasses', 'Accurate progressive passes %'),
     W('smartPasses', 'Smart passes'), W('throughPasses', 'Through passes'), W('keyPasses', 'Key passes'), W('xA', 'xA'),
-    W('passesFinalThird', 'Passes to final third'), W('recoveries', 'Recoveries'), W('interceptions', 'Interceptions'),
+    W('passesFinalThird', 'Passes to final third'), W('padjInterceptions', 'PAdj Interceptions'), W('interceptions', 'Interceptions'),
   ], [G('hiDistance', 'HI Distance'), G('sprintingDistance', 'Sprint Distance'), G('maxSpeed', 'Max Speed'), G('countHighAccel', 'High Accelerations')]),
   role('Interior', 'Llegador', [
     W('goals', 'Goals'), W('npGoals', 'Non penalty goals'), W('xG', 'xG'), W('shots', 'Shots'), W('touchesBox', 'Touches in box'),
@@ -207,7 +214,7 @@ PRESETS.push(
     W('successfulDribbles', 'Successful dribbles %'), W('foulsSuffered', 'Fouls suffered'), W('deepCompletions', 'Deep completions'),
   ], [G('maxSpeed', 'Max Speed'), G('sprintingDistance', 'Sprint Distance'), G('hiDistance', 'HI Distance'), G('countHighAccel', 'High Accelerations')]),
   role('Delantero', 'Pressing Forward', [
-    W('successfulDefActions', 'Successful defensive actions'), W('defDuels', 'Defensive duels'), W('recoveriesOppHalf', 'Recoveries in opposition half'),
+    W('successfulDefActions', 'Successful defensive actions'), W('defDuels', 'Defensive duels'), W('padjInterceptions', 'PAdj Interceptions'),
     W('progRuns', 'Progressive runs'), W('xG', 'xG'), W('goals', 'Goals'), W('shots', 'Shots'), W('touchesBox', 'Touches in box'),
     W('offDuelsWon', 'Offensive duels won %'), W('foulsSuffered', 'Fouls suffered'), W('accelerations', 'Accelerations per 90'),
   ], [G('maxSpeed', 'Max Speed'), G('sprintingDistance', 'Sprint Distance'), G('hiDistance', 'HI Distance'), G('countHighAccel', 'High Accelerations')]),
