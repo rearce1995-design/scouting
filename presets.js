@@ -33,6 +33,10 @@ export const A = {
   smartPasses: ['smart passes per 90', 'smart passes'],
   defDuels: ['defensive duels per 90', 'defensive duels'], defDuelsWon: ['defensive duels won, %', 'defensive duels won %'],
   successfulDefActions: ['successful defensive actions per 90', 'successful defensive actions'],
+  // OJO: si el export no trae una columna "Defensive actions per 90" propia,
+  // el fallback por substring de findColumnByAliases() puede matchear por
+  // error "Successful defensive actions per 90". Preferir 'successfulDefActions'
+  // salvo que confirmes que tu export trae ambas columnas por separado.
   defActions: ['defensive actions per 90', 'defensive actions'],
   interceptions: ['interceptions per 90', 'interceptions'], clearances: ['clearances per 90', 'clearances'],
   blocks: ['blocks per 90', 'blocks', 'shots blocked per 90'],
@@ -52,6 +56,7 @@ export const A = {
   receivedPasses: ['received passes per 90', 'received passes', 'passes received per 90', 'passes received'],
   receivedLongPasses: ['received long passes per 90', 'received long passes'], headGoals: ['head goals per 90', 'head goals'],
   recoveriesOppHalf: ['recoveries in opposition half per 90', 'recoveries in opposition half'],
+  accelerations: ['accelerations per 90', 'accelerations'],
 };
 
 export const PHYS = {
@@ -129,7 +134,7 @@ PRESETS.push(
   role('Lateral', 'Lateral Invertido', [
     W('passes', 'Passes per 90'), W('accPasses', 'Accurate passes %'), W('progPasses', 'Progressive passes'),
     W('accProgPasses', 'Accurate progressive passes %'), W('smartPasses', 'Smart passes'), W('passesFinalThird', 'Passes to final third'),
-    W('throughPasses', 'Through passes'), W('recoveries', 'Recoveries'), W('defActions', 'Defensive actions'), W('interceptions', 'Interceptions'), W('progRuns', 'Progressive runs'),
+    W('throughPasses', 'Through passes'), W('recoveries', 'Recoveries'), W('successfulDefActions', 'Successful defensive actions'), W('interceptions', 'Interceptions'), W('progRuns', 'Progressive runs'),
   ], [G('hiDistance', 'HI Distance'), G('sprintingDistance', 'Sprint Distance'), G('maxSpeed', 'Max Speed'), G('countHighAccel', 'High Accelerations')]),
 
   role('Mediocentro Defensivo', 'Recuperador', [
