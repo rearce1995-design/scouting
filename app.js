@@ -646,11 +646,13 @@ function buildStep4(){
       const idx = e.target.value === '' ? -1 : parseInt(e.target.value,10);
       state.selectedRow = idx >= 0 ? sorted[idx] : null;
       if(state.selectedRow){
-      state.meta.displayName = String(state.selectedRow[state.playerCol] || '');
-      if(state.teamCol) state.meta.club = String(state.selectedRow[state.teamCol] || state.meta.club);
-      state.meta.age = state.ageCol ? String(state.selectedRow[state.ageCol] ?? '').trim() : '';
+        state.meta.displayName = String(state.selectedRow[state.playerCol] || '');
+        if(state.teamCol) state.meta.club = String(state.selectedRow[state.teamCol] || state.meta.club);
+        state.meta.age = state.ageCol ? String(state.selectedRow[state.ageCol] ?? '').trim() : '';
       }
-      renderSidebar();
+      // Actualiza el encabezado de la rueda en pantalla junto con los datos
+      // del jugador, incluida la edad tomada desde la columna AGE.
+      refreshAll();
     }});
     playerSel.appendChild(opt('', 'elegí un jugador...'));
     sorted.forEach((r, i) => {
@@ -825,21 +827,29 @@ function generateWheel(){
   renderMain();
 }
 
-function curvedCategoryLabel(svg, defs, cat, a1, a2, idx){
-  const mid = (a1 + a2) / 2;
-  const chars = [...cat.name.toUpperCase()];
-  // Dibujamos cada letra sobre el arco. Evita textPath, que algunos navegadores
-  // deforman al convertir el SVG a PNG en un canvas.
-  const available = Math.max(12, Math.abs(a2 - a1) * 0.72);
-  const natural = Math.max(18, chars.length * 1.65);
-  const span = Math.min(available, natural);
-  const start = mid - span / 2;
+function curvedArcText(svg, radius, angle, text, opts={}){
+  const originalChars = [...String(text || '')];
+  if(!originalChars.length) return;
+  const lowerHalf = normAngle(angle) > 90 && normAngle(angle) < 270;
+  // En la mitad inferior el arco cambia de dirección: invertir las letras
+  // evita que palabras como "Salida de balón" aparezcan espejadas.
+  const chars = lowerHalf ? originalChars.reverse() : originalChars;
+  const maxSpan = Math.max(5, opts.maxSpan || 42);
+  const naturalSpan = Math.max(opts.minSpan || 0, chars.length * (opts.degPerChar || 1.5));
+  const span = Math.min(maxSpan, naturalSpan);
+  const start = angle - span / 2;
   chars.forEach((char, charIndex) => {
-    const angle = chars.length === 1 ? mid : start + (span * charIndex / (chars.length - 1));
-    const letter = radialText(R_CATLABEL, angle, char, {
-      fill:cat.color, size:10.5, weight:700, spacing:'0.3px'
-    });
-    svg.appendChild(letter);
+    const charAngle = chars.length === 1 ? angle : start + (span * charIndex / (chars.length - 1));
+    svg.appendChild(radialText(radius, charAngle, char, {
+      fill:opts.fill, size:opts.size, weight:opts.weight, mono:opts.mono, spacing:'0'
+    }));
+  });
+}
+
+function curvedCategoryLabel(svg, defs, cat, a1, a2, idx){
+  curvedArcText(svg, R_CATLABEL, (a1+a2)/2, cat.name.toUpperCase(), {
+    fill:cat.color, size:10.5, weight:700,
+    maxSpan:Math.abs(a2-a1)*0.72, degPerChar:1.45, minSpan:10
   });
 }
 
@@ -877,10 +887,17 @@ function renderWheelSVG(){
     const valueMaxW = R_VALUE * spanRad * 0.92;
     const labelMaxW = R_LABEL * spanRad * 0.88;
 
-    wedgeGroup.appendChild(radialText(R_BADGE, mid, pct===null ? '—' : ordinal(pct), { fill: color, size: 12.5, weight: 700, mono:true, maxWidth: badgeMaxW }));
-    wedgeGroup.appendChild(radialText(R_VALUE, mid, fmtVal(val), { fill:'#9AA3B5', size:9.5, mono:true, maxWidth: valueMaxW }));
+    const wedgeSpan = Math.abs(angles.a2 - angles.a1);
+    curvedArcText(wedgeGroup, R_BADGE, mid, pct===null ? '—' : ordinal(pct), {
+      fill:color, size:12.5, weight:700, mono:true, maxSpan:wedgeSpan*0.78, degPerChar:1.6
+    });
+    curvedArcText(wedgeGroup, R_VALUE, mid, fmtVal(val), {
+      fill:'#9AA3B5', size:9.5, mono:true, maxSpan:wedgeSpan*0.78, degPerChar:1.35
+    });
     const label = m.label || m.col;
-    wedgeGroup.appendChild(radialText(R_LABEL, mid, label, { fill:'#AEB6C8', size:10, weight:600, maxWidth: labelMaxW }));
+    curvedArcText(wedgeGroup, R_LABEL, mid, label, {
+      fill:'#AEB6C8', size:10, weight:600, maxSpan:wedgeSpan*0.84, degPerChar:1.35
+    });
     svg.appendChild(wedgeGroup);
   });
 
