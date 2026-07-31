@@ -41,7 +41,7 @@ export const COUNTRY_FIFA = {
   china:'CHN', 'china pr':'CHN', australia:'AUS', 'new zealand':'NZL', 'nueva zelanda':'NZL',
   india:'IND', 'saudi arabia':'KSA', 'arabia saudita':'KSA', qatar:'QAT', uae:'UAE',
   'united arab emirates':'UAE', 'emiratos árabes unidos':'UAE', iran:'IRN', irán:'IRN', iraq:'IRQ', irak:'IRQ',
-  israel:'ISR', jordan:'JOR', jordania:'JOR', lebanon:'LBN', líbano:'LBN',
+  israel:'ISR', jordan:'JOR', jordania:'JOR', lebanon:'LIB', líbano:'LIB',
   syria:'SYR', siria:'SYR', kuwait:'KUW', bahrain:'BHR', baréin:'BHR', oman:'OMA', omán:'OMA',
   thailand:'THA', tailandia:'THA', vietnam:'VIE', indonesia:'IDN', malaysia:'MAS', malasia:'MAS',
   philippines:'PHI', filipinas:'PHI', 'hong kong':'HKG', taiwan:'TPE', 'taiwán':'TPE',
@@ -54,7 +54,7 @@ export const COUNTRY_FIFA = {
   kenya:'KEN', kenia:'KEN', ethiopia:'ETH', etiopía:'ETH', tanzania:'TAN', uganda:'UGA',
   zambia:'ZAM', zimbabwe:'ZIM', angola:'ANG', mozambique:'MOZ', guinea:'GUI',
   'guinea-bissau':'GNB', gambia:'GAM', benin:'BEN', togo:'TOG', niger:'NIG', 'níger':'NIG',
-  chad:'CHA', sudan:'SDN', sudán:'SDN', gabon:'GAB', 'gabón':'GAB',
+  chad:'CHA', sudan:'SUD', sudán:'SUD', gabon:'GAB', 'gabón':'GAB',
   namibia:'NAM', botswana:'BOT', 'cabo verde':'CPV', 'cape verde':'CPV',
   'equatorial guinea':'EQG', 'guinea ecuatorial':'EQG', 'sierra leone':'SLE', 'sierra leona':'SLE',
   liberia:'LBR', rwanda:'RWA', ruanda:'RWA', burundi:'BDI', comoros:'COM', comoras:'COM',
@@ -80,5 +80,8 @@ export function countryToFifaCode(raw){
 }
 
 export function flagCdnUrl(fifaCode){
-  return `${FLAG_BASE_URL}/${fifaCode}.png`;
+  // Los archivos en el repo están en minúsculas (arg.png, esp.png...) aunque
+  // acá guardemos los códigos en mayúsculas por legibilidad — GitHub es
+  // sensible a mayúsculas/minúsculas, así que hay que bajarlos antes de armar la URL.
+  return `${FLAG_BASE_URL}/${fifaCode.toLowerCase()}.png`;
 }
