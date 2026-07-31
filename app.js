@@ -1067,7 +1067,7 @@ function renderMain(){
 
   // svg — sin contenido en el círculo central (igual que el PNG), tamaño
   // reducido para que toda la tarjeta entre en una pantalla sin scroll.
-  const svgWrap = el('div', {style:'width:100%;aspect-ratio:1/1;max-width:640px;margin:0 auto;'});
+  const svgWrap = el('div', {style:'width:100%;aspect-ratio:1/1;max-width:900px;margin:0 auto;'});
   const svg = renderWheelSVG();
   svg.setAttribute('id','wheel-svg');
   svgWrap.appendChild(svg);
