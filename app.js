@@ -1,4 +1,5 @@
 import { PRESETS, A, PHYS, M, C, withDiscipline, disciplineCat } from './presets.js';
+import { countryToFifaCode, flagCdnUrl } from './flags.js';
 
 /* =========================================================================
    RUEDA DE PERCENTILES — constructor de gráficos tipo "percentile wheel"
@@ -9,76 +10,6 @@ import { PRESETS, A, PHYS, M, C, withDiscipline, disciplineCat } from './presets
 const PALETTE = ['#5B85D6','#4C9A6E','#C79A52','#BC5049','#8A72C2','#3F9AA8','#B96E8C','#7C9C4A'];
 const BUCKET = { elite:'#5B85D6', above:'#4C9A6E', avg:'#C79A52', below:'#BC5049' };
 
-/* Mapeo país (nombre, como suele venir en el export de Wyscout, en inglés,
-   más variantes en español por si el usuario editó la columna a mano) -> ISO 3166-1 alpha-2.
-   Se usa para armar la URL de la bandera en flagcdn.com, un CDN público y
-   gratuito, así no hace falta subir ni mantener ninguna imagen. */
-const COUNTRY_ISO2 = {
-  argentina:'ar', bolivia:'bo', brazil:'br', brasil:'br', chile:'cl', colombia:'co',
-  ecuador:'ec', paraguay:'py', peru:'pe', 'perú':'pe', uruguay:'uy', venezuela:'ve',
-  mexico:'mx', 'méxico':'mx', usa:'us', 'united states':'us', 'estados unidos':'us',
-  canada:'ca', 'canadá':'ca', 'costa rica':'cr', panama:'pa', 'panamá':'pa',
-  honduras:'hn', guatemala:'gt', 'el salvador':'sv', nicaragua:'ni', cuba:'cu',
-  'dominican republic':'do', 'república dominicana':'do', jamaica:'jm', haiti:'ht', 'haití':'ht',
-  spain:'es', 'españa':'es', portugal:'pt', france:'fr', francia:'fr',
-  germany:'de', alemania:'de', italy:'it', italia:'it', england:'gb-eng',
-  scotland:'gb-sct', wales:'gb-wls', 'northern ireland':'gb-nir',
-  'united kingdom':'gb', ireland:'ie', 'republic of ireland':'ie', netherlands:'nl',
-  holanda:'nl', belgium:'be', 'bélgica':'be', switzerland:'ch', suiza:'ch',
-  austria:'at', denmark:'dk', dinamarca:'dk', sweden:'se', suecia:'se',
-  norway:'no', noruega:'no', finland:'fi', finlandia:'fi', iceland:'is', islandia:'is',
-  poland:'pl', polonia:'pl', 'czech republic':'cz', czechia:'cz', 'república checa':'cz',
-  slovakia:'sk', eslovaquia:'sk', hungary:'hu', hungría:'hu', romania:'ro', rumania:'ro',
-  bulgaria:'bg', greece:'gr', grecia:'gr', turkey:'tr', 'turquía':'tr',
-  ukraine:'ua', ucrania:'ua', russia:'ru', rusia:'ru', belarus:'by', bielorrusia:'by',
-  croatia:'hr', croacia:'hr', serbia:'rs', slovenia:'si', eslovenia:'si',
-  'bosnia and herzegovina':'ba', 'bosnia y herzegovina':'ba', montenegro:'me',
-  'north macedonia':'mk', 'macedonia del norte':'mk', albania:'al', kosovo:'xk',
-  moldova:'md', moldavia:'md', lithuania:'lt', lituania:'lt', latvia:'lv', letonia:'lv',
-  estonia:'ee', georgia:'ge', armenia:'am', azerbaijan:'az', azerbaiyán:'az',
-  cyprus:'cy', chipre:'cy', malta:'mt', luxembourg:'lu', luxemburgo:'lu',
-  japan:'jp', 'japón':'jp', 'south korea':'kr', 'korea republic':'kr', 'corea del sur':'kr',
-  china:'cn', 'china pr':'cn', australia:'au', 'new zealand':'nz', 'nueva zelanda':'nz',
-  india:'in', 'saudi arabia':'sa', 'arabia saudita':'sa', qatar:'qa', uae:'ae',
-  'united arab emirates':'ae', iran:'ir', irán:'ir', iraq:'iq', irak:'iq',
-  israel:'il', jordan:'jo', jordania:'jo', lebanon:'lb', líbano:'lb',
-  syria:'sy', siria:'sy', kuwait:'kw', bahrain:'bh', baréin:'bh', oman:'om', omán:'om',
-  thailand:'th', tailandia:'th', vietnam:'vn', indonesia:'id', malaysia:'my', malasia:'my',
-  philippines:'ph', filipinas:'ph', 'hong kong':'hk', taiwan:'tw', 'taiwán':'tw',
-  uzbekistan:'uz', kazakhstan:'kz', kazajistán:'kz',
-  nigeria:'ng', ghana:'gh', 'ivory coast':'ci', "côte d'ivoire":'ci', 'costa de marfil':'ci',
-  senegal:'sn', 'senegal':'sn', mali:'ml', malí:'ml', 'burkina faso':'bf',
-  cameroon:'cm', 'camerún':'cm', 'dr congo':'cd', congo:'cg', 'congo dr':'cd',
-  'south africa':'za', 'sudáfrica':'za', egypt:'eg', egipto:'eg', morocco:'ma', marruecos:'ma',
-  algeria:'dz', argelia:'dz', tunisia:'tn', 'túnez':'tn', libya:'ly', libia:'ly',
-  kenya:'ke', kenia:'ke', ethiopia:'et', etiopía:'et', tanzania:'tz', uganda:'ug',
-  zambia:'zm', zimbabwe:'zw', angola:'ao', mozambique:'mz', guinea:'gn',
-  'guinea-bissau':'gw', gambia:'gm', benin:'bj', togo:'tg', niger:'ne', 'níger':'ne',
-  chad:'td', 'chad':'td', sudan:'sd', sudán:'sd', gabon:'ga', 'gabón':'ga',
-  namibia:'na', botswana:'bw', 'cabo verde':'cv', 'cape verde':'cv',
-  'equatorial guinea':'gq', 'guinea ecuatorial':'gq', 'sierra leone':'sl', 'sierra leona':'sl',
-  liberia:'lr', rwanda:'rw', ruanda:'rw', burundi:'bi', comoros:'km', comoras:'km',
-  madagascar:'mg', mauritania:'mr', mauritius:'mu', mauricio:'mu',
-};
-function normalizeCountryName(raw){
-  return String(raw || '')
-    .trim().toLowerCase()
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // saca acentos para matchear
-}
-function countryToISO2(raw){
-  const n = normalizeCountryName(raw);
-  if(!n) return null;
-  if(COUNTRY_ISO2[n]) return COUNTRY_ISO2[n];
-  // fallback: probamos también contra las claves sin acentos (por si el
-  // export trae la versión con tilde y el diccionario la versión sin ella)
-  for(const key in COUNTRY_ISO2){
-    if(normalizeCountryName(key) === n) return COUNTRY_ISO2[key];
-  }
-  return null;
-}
-function flagCdnUrl(iso2, widthPx){
-  return `https://flagcdn.com/w${widthPx}/${iso2}.png`;
-}
 /* País a mostrar: prioriza la columna de nacionalidad detectada en el
    Excel (Birth country / Passport country); si no hay o no matchea a un
    país conocido, cae al campo manual "Bandera/país" del paso 4. */
@@ -1054,9 +985,9 @@ function renderMain(){
     percentileLine ? el('div', {text: percentileLine, style:'color:var(--ink-faint);font-size:11px;margin-top:2px;font-weight:500;'}) : null,
   ]);
   const countryName = resolveCountryName();
-  const iso2 = countryToISO2(countryName);
-  const flagBlock = iso2
-    ? el('img', { src: flagCdnUrl(iso2, 48), alt: countryName, title: countryName, loading:'eager', referrerpolicy:'no-referrer',
+  const fifaCode = countryToFifaCode(countryName);
+  const flagBlock = fifaCode
+    ? el('img', { src: flagCdnUrl(fifaCode), alt: countryName, title: countryName, loading:'eager', referrerpolicy:'no-referrer',
         style:'height:24px;width:auto;border-radius:3px;box-shadow:0 0 0 1px rgba(255,255,255,.08);flex-shrink:0;margin-top:4px;',
         onerror:(e)=>{ e.target.replaceWith(el('div', {text: countryName || '', style:'font-size:12px;color:var(--ink-faint);'})); } })
     : (countryName ? el('div', {text: countryName, style:'font-size:12px;color:var(--ink-faint);margin-top:4px;flex-shrink:0;'}) : el('div', {}));
@@ -1191,11 +1122,11 @@ async function exportPNG(){
   // export con SecurityError. Con la imagen ya en base64 no hace falta
   // ningún pedido de red adicional al rasterizar, así que no hay problema.
   const countryName = resolveCountryName();
-  const iso2 = countryToISO2(countryName);
+  const fifaCode = countryToFifaCode(countryName);
   let flagDataUri = null, flagAspect = 4 / 3;
-  if(iso2){
+  if(fifaCode){
     try{
-      const resp = await fetch(flagCdnUrl(iso2, 80));
+      const resp = await fetch(flagCdnUrl(fifaCode));
       const blob = await resp.blob();
       flagDataUri = await new Promise((res, rej) => {
         const reader = new FileReader();
