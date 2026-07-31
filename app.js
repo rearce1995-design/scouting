@@ -9,6 +9,87 @@ import { PRESETS, A, PHYS, M, C, withDiscipline, disciplineCat } from './presets
 const PALETTE = ['#5B85D6','#4C9A6E','#C79A52','#BC5049','#8A72C2','#3F9AA8','#B96E8C','#7C9C4A'];
 const BUCKET = { elite:'#5B85D6', above:'#4C9A6E', avg:'#C79A52', below:'#BC5049' };
 
+/* Mapeo país (nombre, como suele venir en el export de Wyscout, en inglés,
+   más variantes en español por si el usuario editó la columna a mano) -> ISO 3166-1 alpha-2.
+   Se usa para armar la URL de la bandera en flagcdn.com, un CDN público y
+   gratuito, así no hace falta subir ni mantener ninguna imagen. */
+const COUNTRY_ISO2 = {
+  argentina:'ar', bolivia:'bo', brazil:'br', brasil:'br', chile:'cl', colombia:'co',
+  ecuador:'ec', paraguay:'py', peru:'pe', 'perú':'pe', uruguay:'uy', venezuela:'ve',
+  mexico:'mx', 'méxico':'mx', usa:'us', 'united states':'us', 'estados unidos':'us',
+  canada:'ca', 'canadá':'ca', 'costa rica':'cr', panama:'pa', 'panamá':'pa',
+  honduras:'hn', guatemala:'gt', 'el salvador':'sv', nicaragua:'ni', cuba:'cu',
+  'dominican republic':'do', 'república dominicana':'do', jamaica:'jm', haiti:'ht', 'haití':'ht',
+  spain:'es', 'españa':'es', portugal:'pt', france:'fr', francia:'fr',
+  germany:'de', alemania:'de', italy:'it', italia:'it', england:'gb-eng',
+  scotland:'gb-sct', wales:'gb-wls', 'northern ireland':'gb-nir',
+  'united kingdom':'gb', ireland:'ie', 'republic of ireland':'ie', netherlands:'nl',
+  holanda:'nl', belgium:'be', 'bélgica':'be', switzerland:'ch', suiza:'ch',
+  austria:'at', denmark:'dk', dinamarca:'dk', sweden:'se', suecia:'se',
+  norway:'no', noruega:'no', finland:'fi', finlandia:'fi', iceland:'is', islandia:'is',
+  poland:'pl', polonia:'pl', 'czech republic':'cz', czechia:'cz', 'república checa':'cz',
+  slovakia:'sk', eslovaquia:'sk', hungary:'hu', hungría:'hu', romania:'ro', rumania:'ro',
+  bulgaria:'bg', greece:'gr', grecia:'gr', turkey:'tr', 'turquía':'tr',
+  ukraine:'ua', ucrania:'ua', russia:'ru', rusia:'ru', belarus:'by', bielorrusia:'by',
+  croatia:'hr', croacia:'hr', serbia:'rs', slovenia:'si', eslovenia:'si',
+  'bosnia and herzegovina':'ba', 'bosnia y herzegovina':'ba', montenegro:'me',
+  'north macedonia':'mk', 'macedonia del norte':'mk', albania:'al', kosovo:'xk',
+  moldova:'md', moldavia:'md', lithuania:'lt', lituania:'lt', latvia:'lv', letonia:'lv',
+  estonia:'ee', georgia:'ge', armenia:'am', azerbaijan:'az', azerbaiyán:'az',
+  cyprus:'cy', chipre:'cy', malta:'mt', luxembourg:'lu', luxemburgo:'lu',
+  japan:'jp', 'japón':'jp', 'south korea':'kr', 'korea republic':'kr', 'corea del sur':'kr',
+  china:'cn', 'china pr':'cn', australia:'au', 'new zealand':'nz', 'nueva zelanda':'nz',
+  india:'in', 'saudi arabia':'sa', 'arabia saudita':'sa', qatar:'qa', uae:'ae',
+  'united arab emirates':'ae', iran:'ir', irán:'ir', iraq:'iq', irak:'iq',
+  israel:'il', jordan:'jo', jordania:'jo', lebanon:'lb', líbano:'lb',
+  syria:'sy', siria:'sy', kuwait:'kw', bahrain:'bh', baréin:'bh', oman:'om', omán:'om',
+  thailand:'th', tailandia:'th', vietnam:'vn', indonesia:'id', malaysia:'my', malasia:'my',
+  philippines:'ph', filipinas:'ph', 'hong kong':'hk', taiwan:'tw', 'taiwán':'tw',
+  uzbekistan:'uz', kazakhstan:'kz', kazajistán:'kz',
+  nigeria:'ng', ghana:'gh', 'ivory coast':'ci', "côte d'ivoire":'ci', 'costa de marfil':'ci',
+  senegal:'sn', 'senegal':'sn', mali:'ml', malí:'ml', 'burkina faso':'bf',
+  cameroon:'cm', 'camerún':'cm', 'dr congo':'cd', congo:'cg', 'congo dr':'cd',
+  'south africa':'za', 'sudáfrica':'za', egypt:'eg', egipto:'eg', morocco:'ma', marruecos:'ma',
+  algeria:'dz', argelia:'dz', tunisia:'tn', 'túnez':'tn', libya:'ly', libia:'ly',
+  kenya:'ke', kenia:'ke', ethiopia:'et', etiopía:'et', tanzania:'tz', uganda:'ug',
+  zambia:'zm', zimbabwe:'zw', angola:'ao', mozambique:'mz', guinea:'gn',
+  'guinea-bissau':'gw', gambia:'gm', benin:'bj', togo:'tg', niger:'ne', 'níger':'ne',
+  chad:'td', 'chad':'td', sudan:'sd', sudán:'sd', gabon:'ga', 'gabón':'ga',
+  namibia:'na', botswana:'bw', 'cabo verde':'cv', 'cape verde':'cv',
+  'equatorial guinea':'gq', 'guinea ecuatorial':'gq', 'sierra leone':'sl', 'sierra leona':'sl',
+  liberia:'lr', rwanda:'rw', ruanda:'rw', burundi:'bi', comoros:'km', comoras:'km',
+  madagascar:'mg', mauritania:'mr', mauritius:'mu', mauricio:'mu',
+};
+function normalizeCountryName(raw){
+  return String(raw || '')
+    .trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // saca acentos para matchear
+}
+function countryToISO2(raw){
+  const n = normalizeCountryName(raw);
+  if(!n) return null;
+  if(COUNTRY_ISO2[n]) return COUNTRY_ISO2[n];
+  // fallback: probamos también contra las claves sin acentos (por si el
+  // export trae la versión con tilde y el diccionario la versión sin ella)
+  for(const key in COUNTRY_ISO2){
+    if(normalizeCountryName(key) === n) return COUNTRY_ISO2[key];
+  }
+  return null;
+}
+function flagCdnUrl(iso2, widthPx){
+  return `https://flagcdn.com/w${widthPx}/${iso2}.png`;
+}
+/* País a mostrar: prioriza la columna de nacionalidad detectada en el
+   Excel (Birth country / Passport country); si no hay o no matchea a un
+   país conocido, cae al campo manual "Bandera/país" del paso 4. */
+function resolveCountryName(){
+  if(state.selectedRow && state.nationCol){
+    const v = String(state.selectedRow[state.nationCol] || '').trim();
+    if(v) return v;
+  }
+  return String(state.meta.flag || '').trim();
+}
+
 const state = {
   headers: [],
   rows: [],
@@ -18,6 +99,7 @@ const state = {
   posCol: null,
   minutesCol: null,
   ageCol: null,
+  nationCol: null,
   filters: [],
   categories: [],
   selectedRow: null,
@@ -129,6 +211,7 @@ async function ingestRows(json){
   state.posCol = findCol(['position','posición','posicion','pos']) || state.posCol;
   state.minutesCol = findCol(['minutes played','minutos','minutes','mins']) || state.minutesCol;
   state.ageCol = findCol(['age','edad']) || state.ageCol;
+  state.nationCol = findCol(['birth country', 'nationality', 'nacionalidad', 'país de nacimiento', 'passport country']) || state.nationCol;
 }
 
 function numVal(row, col){
@@ -919,11 +1002,11 @@ function renderWheelSVG(){
   svg.appendChild(svgEl('circle', { cx:CX, cy:CY, r:R_HOLE-8, fill:'none', stroke:'#2A3448', 'stroke-width':1 }));
   const centerLabel = state.meta.centerLabel || (state.meta.club ? state.meta.club.slice(0,3).toUpperCase() : '');
   if(centerLabel){
-    const t1 = svgEl('text', { x:CX, y:CY-4, 'text-anchor':'middle', fill:'#C9A353', 'font-size':22, 'font-family':"'Space Grotesk', sans-serif", 'font-weight':700 });
+    const t1 = svgEl('text', { x:CX, y:CY-4, 'text-anchor':'middle', fill:'#C9A353', 'font-size':22, 'font-family':"'Space Grotesk', sans-serif", 'font-weight':700, class:'wheel-center-text' });
     t1.textContent = centerLabel;
     svg.appendChild(t1);
   }
-  const t2 = svgEl('text', { x:CX, y:CY+18, 'text-anchor':'middle', fill:'#5B6478', 'font-size':9.5, 'font-family':"'Inter', sans-serif", 'letter-spacing':'1px' });
+  const t2 = svgEl('text', { x:CX, y:CY+18, 'text-anchor':'middle', fill:'#5B6478', 'font-size':9.5, 'font-family':"'Inter', sans-serif", 'letter-spacing':'1px', class:'wheel-center-text' });
   t2.textContent = 'PERCENTIL';
   svg.appendChild(t2);
 
@@ -972,7 +1055,12 @@ function renderMain(){
     el('div', {text: `Percentile Rank ${state.meta.groupLabel || ''} · ${state.meta.competition || ''} · ${state.meta.club || ''} · ${state.meta.season || ''}`.replace(/\s*·\s*(?=·|$)/g,''),
       style:'color:var(--gold);font-size:12.5px;margin-top:6px;font-weight:600;'})
   ]);
-  const flagBlock = el('div', {text: state.meta.flag || '', style:'font-size:26px;'});
+  const countryName = resolveCountryName();
+  const iso2 = countryToISO2(countryName);
+  const flagBlock = iso2
+    ? el('img', { src: flagCdnUrl(iso2, 48), alt: countryName, title: countryName,
+        style:'height:30px;width:auto;border-radius:3px;box-shadow:0 0 0 1px rgba(255,255,255,.08);flex-shrink:0;' })
+    : el('div', {text: countryName || '', style:'font-size:26px;'});
   headerRow.appendChild(titleBlock);
   headerRow.appendChild(flagBlock);
   card.appendChild(headerRow);
@@ -1077,7 +1165,7 @@ function renderRankingPanel(){
   return panel;
 }
 
-/* ---- Export PNG con encabezado recto ---- */
+/* ---- Export PNG con identidad "informe editorial" (Wyscout/Hudl/Opta) ---- */
 async function exportPNG(){
   const svg = document.getElementById('wheel-svg');
   if(!svg){ alert('Nada para exportar'); return; }
@@ -1085,16 +1173,51 @@ async function exportPNG(){
   try{ if(document.fonts && document.fonts.ready) await document.fonts.ready; }catch(e){}
 
   const serializer = new XMLSerializer();
-  const wheelOuter = serializer.serializeToString(svg);
+  // Clonamos el SVG en vivo para no tocar la interfaz: en el export el
+  // círculo central debe quedar vacío (solo borde), pero en la web se
+  // sigue mostrando normalmente.
+  const svgClone = svg.cloneNode(true);
+  svgClone.querySelectorAll('.wheel-center-text').forEach(n => n.remove());
+  const wheelOuter = serializer.serializeToString(svgClone);
 
   const titleText = formatPlayerTitle();
   const club = state.meta.club || '';
   const pos = state.presetUI.position || '';
   const role = state.presetUI.role || '';
-  const subtitleRaw = [club, (pos && role ? `${pos} · ${role}` : pos || role)].filter(Boolean).join('   —   ');
-  const bio1 = state.meta.bio1 || '';
-  const bio2 = state.meta.bio2 || '';
+  const clubRoleLine = [club, (pos && role ? `${pos} (${role})` : (pos || role))].filter(Boolean).join(' · ');
+  const compSeason = [state.meta.competition || '', state.meta.season || ''].filter(Boolean).join(' ');
+  const groupSuffix = (state.meta.groupLabel || '').trim();
+  const percentileLine = ['Percentiles' + (groupSuffix ? ` ${groupSuffix}` : ''), compSeason].filter(Boolean).join(' | ');
   const genDate = `Generado ${new Date().toLocaleDateString('es-AR')}`;
+
+  // Bandera: la traemos como data URI en base64 ANTES de armar el SVG.
+  // Si la embebiéramos como <image href="https://flagcdn.com/..."> el
+  // navegador la pide en el momento de rasterizar para canvas.toBlob(),
+  // y como es un recurso cross-origin eso "tinta" el canvas y explota el
+  // export con SecurityError. Con la imagen ya en base64 no hace falta
+  // ningún pedido de red adicional al rasterizar, así que no hay problema.
+  const countryName = resolveCountryName();
+  const iso2 = countryToISO2(countryName);
+  let flagDataUri = null, flagAspect = 4 / 3;
+  if(iso2){
+    try{
+      const resp = await fetch(flagCdnUrl(iso2, 80));
+      const blob = await resp.blob();
+      flagDataUri = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = () => res(reader.result);
+        reader.onerror = rej;
+        reader.readAsDataURL(blob);
+      });
+      const dims = await new Promise((res) => {
+        const img = new Image();
+        img.onload = () => res({ w: img.naturalWidth, h: img.naturalHeight });
+        img.onerror = () => res(null);
+        img.src = flagDataUri;
+      });
+      if(dims && dims.h) flagAspect = dims.w / dims.h;
+    }catch(e){ flagDataUri = null; } // sin conexión / bandera no encontrada: seguimos sin ella
+  }
 
   function escapeXml(s){
     if(!s) return '';
@@ -1105,50 +1228,106 @@ async function exportPNG(){
       .replace(/"/g,'&quot;')
       .replace(/'/g,'&#39;');
   }
-  function wrapTextApprox(text, maxCharsPerLine = 60, maxLines = 2){
-    if(!text) return [];
-    const words = String(text).split(/\s+/);
-    const lines = [];
-    let cur = '';
-    for(const w of words){
-      if((cur + (cur? ' ' : '') + w).length <= maxCharsPerLine){
-        cur = cur ? (cur + ' ' + w) : w;
-      }else{
-        if(cur) lines.push(cur);
-        cur = w;
-        if(lines.length >= maxLines) break;
-      }
-    }
-    if(cur && lines.length < maxLines) lines.push(cur);
-    return lines;
+  // Mide texto real con canvas 2D (usa el mismo font-family/weight que se
+  // va a dibujar) para poder achicar automáticamente lo que no entre, en
+  // vez de recortarlo o dejar que se superponga a la bandera.
+  const measureCtx = document.createElement('canvas').getContext('2d');
+  function textWidth(text, font){
+    measureCtx.font = font;
+    return measureCtx.measureText(text || '').width;
   }
-  const subtitleLines = wrapTextApprox(subtitleRaw, 56, 2);
+  function fitFontSize(text, maxWidth, family, weight, basePx, minPx){
+    let size = basePx;
+    while(size > minPx && textWidth(text, `${weight} ${size}px ${family}`) > maxWidth) size -= 0.5;
+    return size;
+  }
 
-  // Conserva todo el viewBox de la rueda, incluidas las etiquetas externas.
+  // Conserva todo el viewBox de la rueda (790x790 con -45 de margen interno),
+  // el gráfico radial en sí no se toca: solo el layout alrededor.
   const W = 790;
   const WHEEL_H = 790;
-  const HEADER_H = 126;
-  const FOOTER_H = 104;
+  const MARGIN = 50;
+  const HEADER_H = 108;
+  const FOOTER_H = 78;
   const H = HEADER_H + WHEEL_H + FOOTER_H;
 
-  // El SVG de la rueda usa viewBox -45 -45 790 790. Al reemplazar su nodo
-  // raíz por un grupo, compensamos ese origen para que no se recorten textos.
   const wheelGroup = wheelOuter.replace(/^<svg[^>]*>/i, `<g transform="translate(45, ${HEADER_H + 45})">`).replace(/<\/svg>$/i, '</g>');
-  const cx = W / 2;
+
+  /* ---- Encabezado compacto: nombre (izq) + bandera (der) arriba;
+     club/rol debajo; competición/temporada en una tercera línea más chica
+     y en color secundario. Todo responsive vía medición real de texto. ---- */
+  const flagH = 24, flagW = flagDataUri ? flagH * flagAspect : 0;
+  const flagGap = flagDataUri ? 14 : 0;
+  const nameMaxW = W - MARGIN * 2 - flagW - flagGap;
+  const nameFamily = "'Space Grotesk', sans-serif";
+  const nameSize = titleText ? fitFontSize(titleText, nameMaxW, nameFamily, 700, 26, 16) : 26;
+
+  const clubMaxW = W - MARGIN * 2;
+  const clubFamily = "'Inter', sans-serif";
+  const clubSize = clubRoleLine ? fitFontSize(clubRoleLine, clubMaxW, clubFamily, 600, 15, 11) : 15;
+  const compSize = percentileLine ? fitFontSize(percentileLine, clubMaxW, clubFamily, 500, 12, 9.5) : 12;
+
+  let headerMarkup = '';
+  if(titleText){
+    headerMarkup += `<text x="${MARGIN}" y="34" text-anchor="start" font-family="${nameFamily}" font-weight="700" font-size="${nameSize}" fill="#C9A353">${escapeXml(titleText)}</text>`;
+  }
+  if(flagDataUri){
+    const flagY = 34 - flagH * 0.78;
+    headerMarkup += `<image href="${flagDataUri}" x="${W - MARGIN - flagW}" y="${flagY}" width="${flagW}" height="${flagH}" preserveAspectRatio="xMidYMid slice" rx="2"/>`;
+  }
+  if(clubRoleLine){
+    headerMarkup += `<text x="${MARGIN}" y="58" text-anchor="start" font-family="${clubFamily}" font-weight="600" font-size="${clubSize}" fill="#AEB6C8">${escapeXml(clubRoleLine)}</text>`;
+  }
+  if(percentileLine){
+    headerMarkup += `<text x="${MARGIN}" y="79" text-anchor="start" font-family="${clubFamily}" font-weight="500" font-size="${compSize}" fill="#6B7280">${escapeXml(percentileLine)}</text>`;
+  }
+  headerMarkup += `<path d="M ${MARGIN} 94 H ${W - MARGIN}" stroke="#C9A353" stroke-opacity="0.55" stroke-width="1"/>`;
+
+  /* ---- Pie de página: igual que en la web — Generado + nota a la
+     izquierda, leyenda de colores en una fila a la derecha. Sin ningún
+     texto de interacción ("tocá...", "click en...") porque el PNG se ve
+     fuera de la app. ---- */
+  const footerY0 = HEADER_H + WHEEL_H;
+  let footerMarkup = `
+    <text x="${MARGIN}" y="${footerY0 + 27}" text-anchor="start" fill="#8B8F9C" font-family="Inter, sans-serif" font-weight="600" font-size="12">${escapeXml(genDate)}</text>
+    <text x="${MARGIN}" y="${footerY0 + 47}" text-anchor="start" fill="#565B68" font-family="Inter, sans-serif" font-weight="400" font-size="11">Sector más ancho = métrica principal del perfil</text>
+  `;
+  const legendItems = [
+    { color: BUCKET.elite, label:'Elite · top 10%' },
+    { color: BUCKET.above, label:'Por encima del promedio · 65-89' },
+    { color: BUCKET.avg, label:'Promedio · 34-64' },
+    { color: BUCKET.below, label:'Por debajo del promedio · bottom 33%' },
+  ];
+  const legendFont = "600 10.5px 'Inter', sans-serif";
+  const swatch = 8, swatchGap = 6, itemGap = 22;
+  // Fila única no entra (el texto más largo hace que el bloque supere los
+  // ~690px disponibles y pise el texto de la izquierda), así que va en
+  // grilla 2x2 — más compacta y más legible, como en un informe real.
+  const legendRows = [[legendItems[0], legendItems[1]], [legendItems[2], legendItems[3]]];
+  const rowWidths = legendRows.map(row =>
+    row.reduce((sum, it) => sum + swatch + swatchGap + textWidth(it.label, legendFont), 0) + itemGap * (row.length - 1)
+  );
+  const legendBlockW = Math.max(...rowWidths);
+  const legendStartX = (W - MARGIN) - legendBlockW;
+  const legendRowYs = [footerY0 + 30, footerY0 + 48];
+  legendRows.forEach((row, ri) => {
+    let x = legendStartX;
+    const y = legendRowYs[ri];
+    row.forEach(it => {
+      footerMarkup += `<rect x="${x}" y="${y - swatch + 2}" width="${swatch}" height="${swatch}" rx="2" fill="${it.color}"/>`;
+      footerMarkup += `<text x="${x + swatch + swatchGap}" y="${y + 3}" text-anchor="start" font-family="Inter, sans-serif" font-weight="600" font-size="10.5" fill="#9AA3B5">${escapeXml(it.label)}</text>`;
+      x += swatch + swatchGap + textWidth(it.label, legendFont) + itemGap;
+    });
+  });
 
   const wrapper = `
     <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
       <rect x="0" y="0" width="${W}" height="${H}" fill="#0A0E17"/>
-      ${ titleText ? `<text x="${cx}" y="47" text-anchor="middle" font-family="Space Grotesk, sans-serif" font-weight="700" font-size="30" fill="#C9A353">${escapeXml(titleText)}</text>` : '' }
-      ${ subtitleLines[0] ? `<text x="${cx}" y="76" text-anchor="middle" font-family="Inter, sans-serif" font-weight="600" font-size="14" fill="#9AA3B5">${escapeXml(subtitleLines[0])}</text>` : '' }
-      ${ subtitleLines[1] ? `<text x="${cx}" y="96" text-anchor="middle" font-family="Inter, sans-serif" font-weight="600" font-size="14" fill="#9AA3B5">${escapeXml(subtitleLines[1])}</text>` : '' }
-      <path d="M 58 ${HEADER_H - 12} H ${W - 58}" stroke="#C9A353" stroke-opacity="0.55" stroke-width="1"/>
+      ${headerMarkup}
 
       ${wheelGroup}
 
-      <text x="${cx}" y="${HEADER_H + WHEEL_H + 30}" text-anchor="middle" fill="#B6935C" font-family="Inter, sans-serif" font-weight="600" font-size="12">${escapeXml(bio1)}</text>
-      <text x="${cx}" y="${HEADER_H + WHEEL_H + 52}" text-anchor="middle" fill="#8B8F9C" font-family="Inter, sans-serif" font-weight="500" font-size="12">${escapeXml(bio2)}</text>
-      <text x="${cx}" y="${HEADER_H + WHEEL_H + 76}" text-anchor="middle" fill="#565B68" font-family="Inter, sans-serif" font-weight="400" font-size="11">${escapeXml(genDate)}</text>
+      ${footerMarkup}
     </svg>
   `;
 
