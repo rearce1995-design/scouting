@@ -781,7 +781,7 @@ function buildStep4(){
    ======================================================================== */
 
 const CX = 350, CY = 350;
-const R_HOLE = 108;      // radio del círculo central
+const R_HOLE = 68;       // radio del círculo central (más chico ahora que quedó vacío: le da más protagonismo a los sectores)
 const R_MAX = 262;       // radio máximo que puede alcanzar un sector (100%)
 const R_RING_IN = 272;   // anillo fino de categoría (inicio)
 const R_RING_OUT = 282;  // anillo fino de categoría (fin)
@@ -1067,7 +1067,7 @@ function renderMain(){
 
   // svg — sin contenido en el círculo central (igual que el PNG), tamaño
   // reducido para que toda la tarjeta entre en una pantalla sin scroll.
-  const svgWrap = el('div', {style:'width:100%;aspect-ratio:1/1;max-width:600px;margin:0 auto;'});
+  const svgWrap = el('div', {style:'width:100%;aspect-ratio:1/1;max-width:640px;margin:0 auto;'});
   const svg = renderWheelSVG();
   svg.setAttribute('id','wheel-svg');
   svgWrap.appendChild(svg);
