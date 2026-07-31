@@ -768,9 +768,6 @@ function buildStep4(){
       textField('Club', 'club'),
       textField('Temporada', 'season', '2026'),
     ]),
-    textField('Línea de bio 1', 'bio1', 'Argentina · 1.305 mins · Racing Club'),
-    textField('Línea de bio 2', 'bio2', 'Edad 23 · 16 partidos · 181cm · 69kg'),
-    textField('Etiqueta central', 'centerLabel', 'iniciales o club'),
   );
 
   const genBtn = el('button', {class:'btn-gold', text:'Generar gráfico', style:'width:100%;margin-top:14px;padding:11px;font-size:13px;border-radius:8px;', disabled: (!state.rows.length || !state.playerCol || !state.categories.some(c=>c.metrics.some(m=>m.col))), onclick: generateWheel});
@@ -997,18 +994,10 @@ function renderWheelSVG(){
     curvedCategoryLabel(svg, defs, cat, a1, a2, idx);
   });
 
-  // círculo central
+  // círculo central — deliberadamente vacío (solo borde), igual en web y
+  // en el PNG exportado.
   svg.appendChild(svgEl('circle', { cx:CX, cy:CY, r:R_HOLE, fill:'#121826', stroke:'#C9A353', 'stroke-width':2 }));
   svg.appendChild(svgEl('circle', { cx:CX, cy:CY, r:R_HOLE-8, fill:'none', stroke:'#2A3448', 'stroke-width':1 }));
-  const centerLabel = state.meta.centerLabel || (state.meta.club ? state.meta.club.slice(0,3).toUpperCase() : '');
-  if(centerLabel){
-    const t1 = svgEl('text', { x:CX, y:CY-4, 'text-anchor':'middle', fill:'#C9A353', 'font-size':22, 'font-family':"'Space Grotesk', sans-serif", 'font-weight':700, class:'wheel-center-text' });
-    t1.textContent = centerLabel;
-    svg.appendChild(t1);
-  }
-  const t2 = svgEl('text', { x:CX, y:CY+18, 'text-anchor':'middle', fill:'#5B6478', 'font-size':9.5, 'font-family':"'Inter', sans-serif", 'letter-spacing':'1px', class:'wheel-center-text' });
-  t2.textContent = 'PERCENTIL';
-  svg.appendChild(t2);
 
   return svg;
 }
@@ -1048,49 +1037,58 @@ function renderMain(){
 
   const card = el('div', {id:'wheel-wrap'});
 
-  // header
-  const headerRow = el('div', {style:'display:flex;justify-content:space-between;align-items:flex-start;padding:4px 10px 14px;'});
-  const titleBlock = el('div', {}, [
-    el('h2', {text: formatPlayerTitle(), style:'margin:0;font-family:var(--font-display);font-size:28px;font-weight:700;'}),
-    el('div', {text: `Percentile Rank ${state.meta.groupLabel || ''} · ${state.meta.competition || ''} · ${state.meta.club || ''} · ${state.meta.season || ''}`.replace(/\s*·\s*(?=·|$)/g,''),
-      style:'color:var(--gold);font-size:12.5px;margin-top:6px;font-weight:600;'})
+  // header — misma estructura que el PNG exportado: nombre + bandera arriba,
+  // club · posición (rol) debajo, y la competencia/temporada como tercera
+  // línea secundaria más chica.
+  const headerRow = el('div', {style:'display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:2px 4px 10px;'});
+  const club = state.meta.club || '';
+  const pos = state.presetUI.position || '';
+  const role = state.presetUI.role || '';
+  const clubRoleLine = [club, (pos && role ? `${pos} (${role})` : (pos || role))].filter(Boolean).join(' · ');
+  const compSeason = [state.meta.competition || '', state.meta.season || ''].filter(Boolean).join(' ');
+  const groupSuffix = (state.meta.groupLabel || '').trim();
+  const percentileLine = ['Percentiles' + (groupSuffix ? ` ${groupSuffix}` : ''), compSeason].filter(Boolean).join(' | ');
+  const titleBlock = el('div', {style:'min-width:0;'}, [
+    el('h2', {text: formatPlayerTitle(), style:'margin:0;font-family:var(--font-display);font-size:24px;font-weight:700;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--gold);'}),
+    clubRoleLine ? el('div', {text: clubRoleLine, style:'color:var(--ink);font-size:13.5px;margin-top:5px;font-weight:600;'}) : null,
+    percentileLine ? el('div', {text: percentileLine, style:'color:var(--ink-faint);font-size:11px;margin-top:2px;font-weight:500;'}) : null,
   ]);
   const countryName = resolveCountryName();
   const iso2 = countryToISO2(countryName);
   const flagBlock = iso2
-    ? el('img', { src: flagCdnUrl(iso2, 48), alt: countryName, title: countryName,
-        style:'height:30px;width:auto;border-radius:3px;box-shadow:0 0 0 1px rgba(255,255,255,.08);flex-shrink:0;' })
-    : el('div', {text: countryName || '', style:'font-size:26px;'});
+    ? el('img', { src: flagCdnUrl(iso2, 48), alt: countryName, title: countryName, loading:'eager', referrerpolicy:'no-referrer',
+        style:'height:24px;width:auto;border-radius:3px;box-shadow:0 0 0 1px rgba(255,255,255,.08);flex-shrink:0;margin-top:4px;',
+        onerror:(e)=>{ e.target.replaceWith(el('div', {text: countryName || '', style:'font-size:12px;color:var(--ink-faint);'})); } })
+    : (countryName ? el('div', {text: countryName, style:'font-size:12px;color:var(--ink-faint);margin-top:4px;flex-shrink:0;'}) : el('div', {}));
   headerRow.appendChild(titleBlock);
   headerRow.appendChild(flagBlock);
   card.appendChild(headerRow);
-  card.appendChild(el('div', {style:'height:1px;background:linear-gradient(90deg, var(--gold), transparent);margin:0 10px 10px;'}));
+  card.appendChild(el('div', {style:'height:1px;background:linear-gradient(90deg, var(--gold), transparent);margin:0 4px 8px;'}));
 
-  // svg
-  const svgWrap = el('div', {style:'width:100%;aspect-ratio:1/1;max-width:760px;margin:0 auto;'});
+  // svg — sin contenido en el círculo central (igual que el PNG), tamaño
+  // reducido para que toda la tarjeta entre en una pantalla sin scroll.
+  const svgWrap = el('div', {style:'width:100%;aspect-ratio:1/1;max-width:600px;margin:0 auto;'});
   const svg = renderWheelSVG();
   svg.setAttribute('id','wheel-svg');
   svgWrap.appendChild(svg);
   card.appendChild(svgWrap);
 
-  // footer
-  const footer = el('div', {style:'padding:16px 10px 4px;border-top:1px solid var(--border);margin-top:6px;'});
-  const footerTop = el('div', {style:'display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px;'});
-  const bioBlock = el('div', {}, [
-    state.meta.bio1 ? el('div', {text: state.meta.bio1, style:'color:var(--gold);font-size:12px;font-weight:600;'}) : null,
-    state.meta.bio2 ? el('div', {text: state.meta.bio2, style:'color:var(--ink-dim);font-size:11.5px;margin-top:3px;'}) : null,
-    el('div', {text: `Generado ${new Date().toLocaleDateString('es-AR')}`, style:'color:var(--ink-faint);font-size:10.5px;margin-top:8px;'}),
+  // footer — mismas dos líneas a la izquierda y leyenda en grilla 2x2 a la
+  // derecha que en el PNG, sin textos de interacción ("tocá...") para que
+  // web y export se vean idénticos.
+  const footer = el('div', {style:'padding:10px 4px 2px;border-top:1px solid var(--border);margin-top:4px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;'});
+  const footerLeft = el('div', {}, [
+    el('div', {text: `Generado ${new Date().toLocaleDateString('es-AR')}`, style:'color:var(--ink-dim);font-size:11px;font-weight:600;'}),
+    el('div', {text: 'Sector más ancho = métrica principal del perfil', style:'color:var(--ink-faint);font-size:10px;margin-top:4px;'}),
   ]);
-  const legend = el('div', {style:'display:flex;flex-direction:column;gap:5px;'}, [
+  const legend = el('div', {style:'display:grid;grid-template-columns:repeat(2, auto);gap:5px 16px;'}, [
     legendItem(BUCKET.elite, 'Elite · top 10%'),
     legendItem(BUCKET.above, 'Por encima del promedio · 65-89'),
     legendItem(BUCKET.avg, 'Promedio · 34-64'),
     legendItem(BUCKET.below, 'Por debajo del promedio · bottom 33%'),
   ]);
-  footerTop.appendChild(bioBlock);
-  footerTop.appendChild(legend);
-  footer.appendChild(footerTop);
-  footer.appendChild(el('div', {text:'Sector más ancho = métrica clave · tocá cualquier métrica para ver el ranking completo', style:'color:var(--ink-faint);font-size:10px;margin-top:10px;'}));
+  footer.appendChild(footerLeft);
+  footer.appendChild(legend);
   card.appendChild(footer);
 
   const resultRow = el('div', {id:'result-row'}, [card]);
@@ -1173,11 +1171,7 @@ async function exportPNG(){
   try{ if(document.fonts && document.fonts.ready) await document.fonts.ready; }catch(e){}
 
   const serializer = new XMLSerializer();
-  // Clonamos el SVG en vivo para no tocar la interfaz: en el export el
-  // círculo central debe quedar vacío (solo borde), pero en la web se
-  // sigue mostrando normalmente.
   const svgClone = svg.cloneNode(true);
-  svgClone.querySelectorAll('.wheel-center-text').forEach(n => n.remove());
   const wheelOuter = serializer.serializeToString(svgClone);
 
   const titleText = formatPlayerTitle();
