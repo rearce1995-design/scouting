@@ -1067,7 +1067,7 @@ function renderMain(){
 
   // svg — sin contenido en el círculo central (igual que el PNG), tamaño
   // reducido para que toda la tarjeta entre en una pantalla sin scroll.
-  const svgWrap = el('div', {style:'width:100%;aspect-ratio:1/1;max-width:900px;margin:0 auto;'});
+  const svgWrap = el('div', {style:'width:100%;aspect-ratio:1/1;max-width:720px;margin:0 auto;'});
   const svg = renderWheelSVG();
   svg.setAttribute('id','wheel-svg');
   svgWrap.appendChild(svg);
@@ -1079,7 +1079,7 @@ function renderMain(){
   const footer = el('div', {style:'padding:10px 4px 2px;border-top:1px solid var(--border);margin-top:4px;display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;'});
   const footerLeft = el('div', {}, [
     el('div', {text: `Generado ${new Date().toLocaleDateString('es-AR')}`, style:'color:var(--ink-dim);font-size:11px;font-weight:600;'}),
-    el('div', {text: 'Sector más ancho = métrica principal del perfil', style:'color:var(--ink-faint);font-size:10px;margin-top:4px;'}),
+    el('div', {text: 'Sector más ancho = métrica principal del perfil · tocá cualquier métrica para ver el ranking completo', style:'color:var(--ink-faint);font-size:10px;margin-top:4px;'}),
   ]);
   const legend = el('div', {style:'display:grid;grid-template-columns:repeat(2, auto);gap:5px 16px;'}, [
     legendItem(BUCKET.elite, 'Elite · top 10%'),
