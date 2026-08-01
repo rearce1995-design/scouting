@@ -1,5 +1,5 @@
 import { PRESETS, A, PHYS, M, C, withDiscipline, disciplineCat } from './presets.js';
-import { countryToFifaCode, flagCdnUrl } from './flags.js';
+import { countryToFifaCode, flagCdnUrl, normalizeCountryName } from './flags.js';
 
 /* =========================================================================
    RUEDA DE PERCENTILES — constructor de gráficos tipo "percentile wheel"
@@ -13,10 +13,41 @@ const BUCKET = { elite:'#5B85D6', above:'#4C9A6E', avg:'#C79A52', below:'#BC5049
 /* País a mostrar: prioriza la columna de nacionalidad detectada en el
    Excel (Birth country / Passport country); si no hay o no matchea a un
    país conocido, cae al campo manual "Bandera/país" del paso 4. */
+/* Devuelve la lista de países candidatos para un jugador, sin duplicados:
+   primero el país de nacimiento (si hay), después cada país que aparezca
+   en "Passport country" (que puede traer varios separados por coma, caso
+   típico de doble nacionalidad). Se usa tanto para resolver qué bandera
+   mostrar como para armar el selector manual cuando hay más de un
+   candidato — así el usuario elige cuál representa en vez de que la app
+   adivine mal (ver casos Lookman vs. Stuani). */
+function getNationalityCandidates(){
+  if(!state.selectedRow) return [];
+  const birth = state.birthCol ? String(state.selectedRow[state.birthCol] || '').trim() : '';
+  const passportRaw = state.passportCol ? String(state.selectedRow[state.passportCol] || '').trim() : '';
+  const passportList = passportRaw.split(',').map(s => s.trim()).filter(Boolean);
+  const seen = new Set();
+  const out = [];
+  for(const c of [birth, ...passportList]){
+    if(!c) continue;
+    const key = normalizeCountryName(c);
+    if(seen.has(key)) continue;
+    seen.add(key);
+    out.push(c);
+  }
+  return out;
+}
+
+/* País a mostrar: si el usuario ya eligió manualmente entre varios
+   candidatos (ver getNationalityCandidates), se respeta esa elección.
+   Si no, se usa el país de nacimiento por default (es el caso correcto
+   la mayoría de las veces); si no hay país de nacimiento, se cae al
+   primer país listado en el pasaporte. Último recurso: el campo manual
+   "Bandera/país" del paso 4. */
 function resolveCountryName(){
-  if(state.selectedRow && state.nationCol){
-    const v = String(state.selectedRow[state.nationCol] || '').trim();
-    if(v) return v;
+  if(state.selectedRow){
+    if(state.meta.selectedNationality) return state.meta.selectedNationality;
+    const candidates = getNationalityCandidates();
+    if(candidates.length) return candidates[0];
   }
   return String(state.meta.flag || '').trim();
 }
@@ -31,12 +62,15 @@ const state = {
   minutesCol: null,
   ageCol: null,
   nationCol: null,
+  passportCol: null,
+  birthCol: null,
   filters: [],
   categories: [],
   selectedRow: null,
   meta: {
     displayName: '', groupLabel: 'vs. jugadores del grupo', competition: '',
-    club: '', season: '', flag: '', centerLabel: '', bio1: '', bio2: '', age: ''
+    club: '', season: '', flag: '', centerLabel: '', bio1: '', bio2: '', age: '',
+    selectedNationality: ''
   },
   presetUI: { position: '', role: '', includePhysical: false },
   activeRanking: null // { catName, label, col, invert }
@@ -142,7 +176,9 @@ async function ingestRows(json){
   state.posCol = findCol(['position','posición','posicion','pos']) || state.posCol;
   state.minutesCol = findCol(['minutes played','minutos','minutes','mins']) || state.minutesCol;
   state.ageCol = findCol(['age','edad']) || state.ageCol;
-  state.nationCol = findCol(['birth country', 'nationality', 'nacionalidad', 'país de nacimiento', 'passport country']) || state.nationCol;
+  state.birthCol = findCol(['birth country', 'país de nacimiento']) || state.birthCol;
+  state.passportCol = findCol(['passport country', 'nationality', 'nacionalidad']) || state.passportCol;
+  state.nationCol = state.birthCol || state.passportCol; // alias legado, ya no se usa para resolver bandera
 }
 
 function numVal(row, col){
@@ -659,6 +695,7 @@ function buildStep4(){
     const playerSel = el('select', {onchange:(e)=>{
       const idx = e.target.value === '' ? -1 : parseInt(e.target.value,10);
       state.selectedRow = idx >= 0 ? sorted[idx] : null;
+      state.meta.selectedNationality = ''; // el jugador cambió: no arrastramos la elección del anterior
       if(state.selectedRow){
         state.meta.displayName = String(state.selectedRow[state.playerCol] || '');
         if(state.teamCol) state.meta.club = String(state.selectedRow[state.teamCol] || state.meta.club);
@@ -677,6 +714,39 @@ function buildStep4(){
       playerSel,
       el('div', {class:'helptext', text:'Ordenados por Apellido, Inicial. - Club'})
     ]));
+
+    // Si el jugador tiene más de un país candidato (nace en uno, pasaporte
+    // de otro/s), no adivinamos: mostramos las banderas y elegís vos cuál
+    // representa. Ej: Stuani nace en Uruguay con pasaporte uruguayo+italiano
+    // -> hay que poder elegir Uruguay explícitamente en vez de que la app
+    // tire una moneda.
+    const candidates = getNationalityCandidates();
+    if(candidates.length > 1){
+      const activePick = state.meta.selectedNationality || candidates[0];
+      const chips = el('div', {style:'display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;'});
+      candidates.forEach(country => {
+        const isActive = normalizeCountryName(country) === normalizeCountryName(activePick);
+        const fifa = countryToFifaCode(country);
+        const chip = el('button', {
+          type:'button',
+          style:`display:flex;align-items:center;gap:6px;padding:5px 9px;border-radius:7px;font-size:11.5px;cursor:pointer;
+                 background:${isActive ? 'var(--gold-soft)' : '#0D1220'};
+                 border:1px solid ${isActive ? 'var(--gold)' : 'var(--border)'};
+                 color:${isActive ? 'var(--gold)' : 'var(--ink-dim)'};font-weight:${isActive ? '700' : '500'};`,
+          onclick: () => { state.meta.selectedNationality = country; refreshAll(); }
+        }, [
+          fifa ? el('img', {src: flagCdnUrl(fifa), alt:'', style:'height:14px;width:auto;border-radius:2px;flex-shrink:0;',
+              onerror:(e)=>{ e.target.style.display='none'; }}) : null,
+          el('span', {text: country}),
+        ]);
+        chips.appendChild(chip);
+      });
+      children.push(el('div', {style:'margin-top:8px;'}, [
+        el('label', {class:'field-label', text:'Selección que representa'}),
+        chips,
+        el('div', {class:'helptext', text:'Tiene más de una nacionalidad cargada — elegí cuál mostrar.'})
+      ]));
+    }
   } else {
     children.push(el('div', {class:'helptext', text:'Cargá datos y mapeá la columna de jugador primero.'}));
   }
