@@ -1122,17 +1122,38 @@ function openRankingPanel(cat, m){
 
 function computeRanking(){
   const info = state.activeRanking;
-  if(!info) return { rows: [], info };
+  if(!info) return { rows: [], info, myPct: null, myVal: null };
   const group = groupRows();
   const rows = group
     .map(r => ({ ref:r, name: state.playerCol ? String(r[state.playerCol] ?? '') : '?', team: state.teamCol ? String(r[state.teamCol] ?? '') : '', val: numVal(r, info.col) }))
     .filter(r => r.val !== null)
     .sort((a,b) => info.invert ? a.val - b.val : b.val - a.val);
-  return { rows, info };
+  const myVal = state.selectedRow ? numVal(state.selectedRow, info.col) : null;
+  const { pct: myPct } = computePercentile(group, info.col, myVal, info.invert);
+  return { rows, info, myPct, myVal };
+}
+
+/* Agrupa los valores del grupo en bins para el histograma de "Distribución".
+   Cantidad de bins escalada según el tamaño del grupo (entre 5 y 12). */
+function computeDistribution(rows){
+  const vals = rows.map(r => r.val).filter(v => v !== null && isFinite(v));
+  if(vals.length < 2) return null;
+  const min = Math.min(...vals), max = Math.max(...vals);
+  if(min === max) return null;
+  const binCount = Math.min(12, Math.max(5, Math.round(Math.sqrt(vals.length))));
+  const binSize = (max - min) / binCount;
+  const bins = Array.from({length: binCount}, (_, i) => ({ from: min + i*binSize, to: min + (i+1)*binSize, count: 0 }));
+  vals.forEach(v => {
+    let idx = Math.floor((v - min) / binSize);
+    if(idx >= binCount) idx = binCount - 1;
+    if(idx < 0) idx = 0;
+    bins[idx].count++;
+  });
+  return { bins, min, max };
 }
 
 function renderRankingPanel(){
-  const { rows, info } = computeRanking();
+  const { rows, info, myPct, myVal } = computeRanking();
   const panel = el('div', {id:'ranking-panel'});
   panel.appendChild(el('div', {class:'rank-head'}, [
     el('div', {}, [
@@ -1142,26 +1163,94 @@ function renderRankingPanel(){
   ]));
   panel.appendChild(el('div', {class:'rank-sub', text: `${info.catName} · ranking dentro del grupo (${rows.length} jugadores)${info.invert ? ' · menor es mejor' : ''}`}));
 
-  const list = el('div', {class:'rank-list'});
-  const playerRowRef = state.selectedRow;
-  rows.forEach((r, i) => {
-    const isMe = r.ref === playerRowRef;
-    const row = el('div', {class:'rank-row' + (isMe ? ' me' : '')}, [
-      el('span', {class:'rk-num', text: '#' + (i+1)}),
-      el('span', {class:'rk-name', text: r.team ? `${r.name} — ${r.team}` : r.name}),
-      el('span', {class:'rk-val', text: fmtVal(r.val)}),
-    ]);
-    list.appendChild(row);
-  });
-  panel.appendChild(list);
+  // Percentil grande: relaciona de un vistazo el gancho de la rueda con
+  // el número exacto, sin tener que buscarlo en la lista de abajo.
+  if(myPct !== null){
+    const color = bucketColor(myPct);
+    panel.appendChild(el('div', {style:`display:flex;align-items:baseline;gap:10px;padding:10px 4px 14px;border-bottom:1px solid var(--border);margin-bottom:10px;`}, [
+      el('span', {text: String(myPct), style:`font-family:var(--font-display);font-size:44px;font-weight:700;line-height:1;color:${color};`}),
+      el('span', {text: ordinal(myPct).replace(String(myPct), '').trim() || 'th', style:`font-family:var(--font-display);font-size:18px;font-weight:700;color:${color};align-self:flex-start;margin-top:6px;`}),
+      el('span', {text: `percentil · vos: ${fmtVal(myVal)}`, style:'color:var(--ink-faint);font-size:11px;margin-left:2px;'}),
+    ]));
+  }
 
-  // hace scroll automático hasta la fila del jugador actual
-  setTimeout(() => {
-    const meRow = panel.querySelector('.rank-row.me');
-    if(meRow) meRow.scrollIntoView({ block:'center' });
-  }, 0);
+  // Toggle Ranking (lista) / Distribución (histograma) — la lista sirve
+  // para ver nombres puntuales, el histograma para entender rápido si el
+  // valor del jugador es un outlier o está pegado al promedio del grupo.
+  state.rankingView = state.rankingView || 'list';
+  const tabBtn = (key, label) => el('button', {
+    type:'button', text: label,
+    style:`flex:1;padding:6px 8px;font-size:11.5px;font-weight:700;border-radius:6px;cursor:pointer;
+           background:${state.rankingView===key ? 'var(--gold-soft)' : 'transparent'};
+           border:1px solid ${state.rankingView===key ? 'var(--gold)' : 'var(--border)'};
+           color:${state.rankingView===key ? 'var(--gold)' : 'var(--ink-dim)'};`,
+    onclick: () => { state.rankingView = key; renderMain(); }
+  });
+  panel.appendChild(el('div', {style:'display:flex;gap:6px;margin-bottom:10px;'}, [
+    tabBtn('list', 'Ranking'),
+    tabBtn('dist', 'Distribución'),
+  ]));
+
+  if(state.rankingView === 'dist'){
+    panel.appendChild(renderDistributionView(rows, myVal));
+  } else {
+    const list = el('div', {class:'rank-list'});
+    const playerRowRef = state.selectedRow;
+    rows.forEach((r, i) => {
+      const isMe = r.ref === playerRowRef;
+      const row = el('div', {class:'rank-row' + (isMe ? ' me' : '')}, [
+        el('span', {class:'rk-num', text: '#' + (i+1)}),
+        el('span', {class:'rk-name', text: r.team ? `${r.name} — ${r.team}` : r.name}),
+        el('span', {class:'rk-val', text: fmtVal(r.val)}),
+      ]);
+      list.appendChild(row);
+    });
+    panel.appendChild(list);
+
+    // hace scroll automático hasta la fila del jugador actual
+    setTimeout(() => {
+      const meRow = panel.querySelector('.rank-row.me');
+      if(meRow) meRow.scrollIntoView({ block:'center' });
+    }, 0);
+  }
 
   return panel;
+}
+
+/* Histograma simple: cuántos jugadores del grupo caen en cada rango de
+   valores, con la barra del jugador actual resaltada en dorado. */
+function renderDistributionView(rows, myVal){
+  const dist = computeDistribution(rows);
+  if(!dist){
+    return el('div', {class:'helptext', text:'No hay suficiente variación de datos para mostrar una distribución.'});
+  }
+  const { bins, min, max } = dist;
+  const maxCount = Math.max(...bins.map(b => b.count), 1);
+  const wrap = el('div', {style:'display:flex;flex-direction:column;gap:10px;'});
+  const chart = el('div', {style:'display:flex;align-items:flex-end;gap:3px;height:150px;padding:0 2px;'});
+  bins.forEach(b => {
+    const isMyBin = myVal !== null && myVal >= b.from && (myVal < b.to || (b === bins[bins.length-1] && myVal <= b.to));
+    const h = Math.max(3, Math.round((b.count / maxCount) * 130));
+    const bar = el('div', {
+      title: `${fmtVal(b.from)} – ${fmtVal(b.to)}: ${b.count} jugador${b.count===1?'':'es'}`,
+      style:`flex:1;height:${h}px;border-radius:3px 3px 0 0;
+             background:${isMyBin ? 'var(--gold)' : 'var(--blue)'};
+             opacity:${isMyBin ? '1' : '.55'};`
+    });
+    chart.appendChild(bar);
+  });
+  wrap.appendChild(chart);
+  wrap.appendChild(el('div', {style:'display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-faint);font-family:var(--font-mono);'}, [
+    el('span', {text: fmtVal(min)}),
+    el('span', {text: fmtVal(max)}),
+  ]));
+  if(myVal !== null){
+    wrap.appendChild(el('div', {style:'display:flex;align-items:center;gap:6px;margin-top:2px;'}, [
+      el('div', {style:'width:10px;height:10px;border-radius:3px;background:var(--gold);flex-shrink:0;'}),
+      el('span', {text: `Tu barra (valor: ${fmtVal(myVal)})`, style:'font-size:11px;color:var(--ink-dim);'}),
+    ]));
+  }
+  return wrap;
 }
 
 /* ---- Export PNG con identidad "informe editorial" (Wyscout/Hudl/Opta) ---- */
