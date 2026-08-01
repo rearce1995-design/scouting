@@ -696,6 +696,7 @@ function buildStep4(){
       const idx = e.target.value === '' ? -1 : parseInt(e.target.value,10);
       state.selectedRow = idx >= 0 ? sorted[idx] : null;
       state.meta.selectedNationality = ''; // el jugador cambió: no arrastramos la elección del anterior
+      state._scrollToMe = true; // si el panel de ranking ya estaba abierto, saltar a la posición del jugador nuevo sí tiene sentido
       if(state.selectedRow){
         state.meta.displayName = String(state.selectedRow[state.playerCol] || '');
         if(state.teamCol) state.meta.club = String(state.selectedRow[state.teamCol] || state.meta.club);
@@ -1117,6 +1118,7 @@ function renderMain(){
 /* ---- Ranking: click en una métrica de la rueda muestra dónde queda el jugador en el grupo ---- */
 function openRankingPanel(cat, m){
   state.activeRanking = { catName: cat.name, label: m.label || m.col, col: m.col, invert: !!m.invert };
+  state._scrollToMe = true; // recién se abrió: esta vez sí hacemos scroll a la fila del jugador
   renderMain();
 }
 
@@ -1207,11 +1209,16 @@ function renderRankingPanel(){
     });
     panel.appendChild(list);
 
-    // hace scroll automático hasta la fila del jugador actual
-    setTimeout(() => {
-      const meRow = panel.querySelector('.rank-row.me');
-      if(meRow) meRow.scrollIntoView({ block:'center' });
-    }, 0);
+    // hace scroll automático hasta la fila del jugador SOLO cuando el panel
+    // recién se abrió para esta métrica — no cada vez que se re-renderiza
+    // (ej: al volver de la pestaña "Distribución" no queremos que salte).
+    if(state._scrollToMe){
+      state._scrollToMe = false;
+      setTimeout(() => {
+        const meRow = panel.querySelector('.rank-row.me');
+        if(meRow) meRow.scrollIntoView({ block:'center' });
+      }, 0);
+    }
   }
 
   return panel;
