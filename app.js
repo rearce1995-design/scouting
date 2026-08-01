@@ -222,6 +222,21 @@ function ordinal(n){
   }
 }
 
+/* Posición exacta del jugador dentro del grupo para una métrica (mismo
+   criterio de orden que la lista del panel de ranking) — se usa tanto para
+   el tooltip de la rueda como para el resumen del panel, así los números
+   nunca se desincronizan entre uno y otro. */
+function findGroupRank(group, playerRow, col, invert){
+  if(!playerRow) return null;
+  const items = group
+    .map(r => ({ ref:r, val: numVal(r, col) }))
+    .filter(x => x.val !== null)
+    .sort((a,b) => invert ? a.val - b.val : b.val - a.val);
+  const idx = items.findIndex(x => x.ref === playerRow);
+  if(idx < 0) return null;
+  return { rank: idx + 1, total: items.length };
+}
+
 function computePercentile(group, col, playerValue, invert){
   const vals = group.map(r => numVal(r, col)).filter(v => v !== null);
   const n = vals.length;
@@ -816,6 +831,30 @@ function arcPathDir(r, aFrom, aTo, sweepFlag){
   return `M ${p1.x.toFixed(2)} ${p1.y.toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 ${large} ${sweepFlag} ${p2.x.toFixed(2)} ${p2.y.toFixed(2)}`;
 }
 
+function escapeXmlText(s){
+  if(s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+// Posiciona el tooltip de la rueda pegado al cursor, pero sin salirse del
+// contenedor (evita que se corte contra el borde de la tarjeta).
+function positionTooltip(tooltipEl, evt){
+  const container = tooltipEl.parentElement;
+  if(!container) return;
+  const rect = container.getBoundingClientRect();
+  const OFFSET = 14;
+  let x = evt.clientX - rect.left + OFFSET;
+  let y = evt.clientY - rect.top + OFFSET;
+  const ttW = tooltipEl.offsetWidth || 170;
+  const ttH = tooltipEl.offsetHeight || 90;
+  if(x + ttW > rect.width) x = evt.clientX - rect.left - ttW - OFFSET;
+  if(y + ttH > rect.height) y = evt.clientY - rect.top - ttH - OFFSET;
+  tooltipEl.style.left = Math.max(4, x) + 'px';
+  tooltipEl.style.top = Math.max(4, y) + 'px';
+}
+
 function svgEl(tag, attrs={}){
   const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
   for(const k in attrs) e.setAttribute(k, attrs[k]);
@@ -942,7 +981,7 @@ function curvedCategoryLabel(svg, defs, cat, a1, a2, idx){
   });
 }
 
-function renderWheelSVG(){
+function renderWheelSVG(tooltipEl){
   const group = groupRows();
   const player = state.selectedRow;
   const { flat, catSpans } = buildMetricLayout();
@@ -961,11 +1000,30 @@ function renderWheelSVG(){
     if(!angles) return;
     const val = numVal(player, m.col);
     const { pct } = computePercentile(group, m.col, val, m.invert);
+    const rankInfo = findGroupRank(group, player, m.col, m.invert);
     const color = bucketColor(pct);
     const outerR = pct === null ? R_HOLE : R_HOLE + (pct/100) * (R_MAX - R_HOLE);
 
     const wedgeGroup = svgEl('g', { class:'metric-wedge' });
     wedgeGroup.addEventListener('click', () => openRankingPanel(cat, m));
+
+    if(tooltipEl){
+      const label = m.label || m.col;
+      const showTooltip = (evt) => {
+        tooltipEl.innerHTML = `
+          <div class="wtt-title">${escapeXmlText(label)}</div>
+          <div class="wtt-row"><span>Valor</span><b>${escapeXmlText(fmtVal(val))}</b></div>
+          <div class="wtt-row"><span>Percentil</span><b style="color:${color}">${pct===null?'—':pct}</b></div>
+          <div class="wtt-row"><span>Ranking</span><b>${rankInfo ? `#${rankInfo.rank} / ${rankInfo.total}` : '—'}</b></div>
+          <div class="wtt-cat">${escapeXmlText(cat.name)}</div>
+        `;
+        positionTooltip(tooltipEl, evt);
+        tooltipEl.classList.add('show');
+      };
+      wedgeGroup.addEventListener('mouseenter', showTooltip);
+      wedgeGroup.addEventListener('mousemove', (evt) => positionTooltip(tooltipEl, evt));
+      wedgeGroup.addEventListener('mouseleave', () => tooltipEl.classList.remove('show'));
+    }
 
     wedgeGroup.appendChild(svgEl('path', { class:'wedge-track', d: sectorPath(R_HOLE, R_MAX, angles.a1, angles.a2), fill:'#151C2C' }));
     wedgeGroup.appendChild(svgEl('path', { class:'wedge-fill', d: sectorPath(R_HOLE, outerR, angles.a1, angles.a2), fill:color, opacity:0.88 }));
@@ -1042,7 +1100,7 @@ function renderMain(){
   // header — misma estructura que el PNG exportado: nombre + bandera arriba,
   // club · posición (rol) debajo, y la competencia/temporada como tercera
   // línea secundaria más chica.
-  const headerRow = el('div', {style:'display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:2px 4px 10px;'});
+  const headerRow = el('div', {style:'display:flex;justify-content:space-between;align-items:flex-start;gap:14px;padding:2px 4px 12px;'});
   const club = state.meta.club || '';
   const pos = state.presetUI.position || '';
   const role = state.presetUI.role || '';
@@ -1052,27 +1110,30 @@ function renderMain(){
   const percentileLine = ['Percentiles' + (groupSuffix ? ` ${groupSuffix}` : ''), compSeason].filter(Boolean).join(' | ');
   const titleBlock = el('div', {style:'min-width:0;'}, [
     el('h2', {text: formatPlayerTitle(), style:'margin:0;font-family:var(--font-display);font-size:24px;font-weight:700;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--gold);'}),
-    clubRoleLine ? el('div', {text: clubRoleLine, style:'color:var(--ink);font-size:13.5px;margin-top:5px;font-weight:600;'}) : null,
-    percentileLine ? el('div', {text: percentileLine, style:'color:var(--ink-faint);font-size:11px;margin-top:2px;font-weight:500;'}) : null,
+    clubRoleLine ? el('div', {text: clubRoleLine, style:'color:var(--ink);font-size:14.5px;margin-top:6px;font-weight:700;letter-spacing:.1px;'}) : null,
+    percentileLine ? el('div', {text: percentileLine, style:'color:var(--ink-faint);font-size:11px;margin-top:3px;font-weight:500;'}) : null,
   ]);
   const countryName = resolveCountryName();
   const fifaCode = countryToFifaCode(countryName);
   const flagBlock = fifaCode
     ? el('img', { src: flagCdnUrl(fifaCode), alt: countryName, title: countryName, loading:'eager', referrerpolicy:'no-referrer',
-        style:'height:24px;width:auto;border-radius:3px;box-shadow:0 0 0 1px rgba(255,255,255,.08);flex-shrink:0;margin-top:4px;',
+        style:'height:30px;width:auto;border-radius:4px;box-shadow:0 0 0 1px rgba(255,255,255,.1);flex-shrink:0;margin-top:3px;',
         onerror:(e)=>{ e.target.replaceWith(el('div', {text: countryName || '', style:'font-size:12px;color:var(--ink-faint);'})); } })
     : (countryName ? el('div', {text: countryName, style:'font-size:12px;color:var(--ink-faint);margin-top:4px;flex-shrink:0;'}) : el('div', {}));
   headerRow.appendChild(titleBlock);
   headerRow.appendChild(flagBlock);
   card.appendChild(headerRow);
-  card.appendChild(el('div', {style:'height:1px;background:linear-gradient(90deg, var(--gold), transparent);margin:0 4px 8px;'}));
+  card.appendChild(el('div', {style:'height:1px;background:linear-gradient(90deg, var(--gold), transparent);margin:0 4px 10px;'}));
+
 
   // svg — sin contenido en el círculo central (igual que el PNG), tamaño
   // reducido para que toda la tarjeta entre en una pantalla sin scroll.
-  const svgWrap = el('div', {style:'width:100%;aspect-ratio:1/1;max-width:720px;margin:0 auto;'});
-  const svg = renderWheelSVG();
+  const svgWrap = el('div', {style:'width:100%;aspect-ratio:1/1;max-width:720px;margin:0 auto;position:relative;'});
+  const tooltipEl = el('div', {id:'wheel-tooltip'});
+  const svg = renderWheelSVG(tooltipEl);
   svg.setAttribute('id','wheel-svg');
   svgWrap.appendChild(svg);
+  svgWrap.appendChild(tooltipEl);
   card.appendChild(svgWrap);
 
   // footer — mismas dos líneas a la izquierda y leyenda en grilla 2x2 a la
@@ -1124,7 +1185,7 @@ function openRankingPanel(cat, m){
 
 function computeRanking(){
   const info = state.activeRanking;
-  if(!info) return { rows: [], info, myPct: null, myVal: null };
+  if(!info) return { rows: [], info, myPct: null, myVal: null, myRank: null };
   const group = groupRows();
   const rows = group
     .map(r => ({ ref:r, name: state.playerCol ? String(r[state.playerCol] ?? '') : '?', team: state.teamCol ? String(r[state.teamCol] ?? '') : '', val: numVal(r, info.col) }))
@@ -1132,16 +1193,22 @@ function computeRanking(){
     .sort((a,b) => info.invert ? a.val - b.val : b.val - a.val);
   const myVal = state.selectedRow ? numVal(state.selectedRow, info.col) : null;
   const { pct: myPct } = computePercentile(group, info.col, myVal, info.invert);
-  return { rows, info, myPct, myVal };
+  const myRank = findGroupRank(group, state.selectedRow, info.col, info.invert);
+  return { rows, info, myPct, myVal, myRank };
 }
 
-/* Agrupa los valores del grupo en bins para el histograma de "Distribución".
+/* Agrupa los valores del grupo en bins para el histograma de "Distribución",
+   y calcula media/mediana para dar contexto sin sobrecargar la vista.
    Cantidad de bins escalada según el tamaño del grupo (entre 5 y 12). */
 function computeDistribution(rows){
   const vals = rows.map(r => r.val).filter(v => v !== null && isFinite(v));
   if(vals.length < 2) return null;
   const min = Math.min(...vals), max = Math.max(...vals);
-  if(min === max) return null;
+  const mean = vals.reduce((a,b) => a+b, 0) / vals.length;
+  const sortedVals = vals.slice().sort((a,b) => a-b);
+  const mid = Math.floor(sortedVals.length / 2);
+  const median = sortedVals.length % 2 ? sortedVals[mid] : (sortedVals[mid-1] + sortedVals[mid]) / 2;
+  if(min === max) return { bins: null, min, max, mean, median };
   const binCount = Math.min(12, Math.max(5, Math.round(Math.sqrt(vals.length))));
   const binSize = (max - min) / binCount;
   const bins = Array.from({length: binCount}, (_, i) => ({ from: min + i*binSize, to: min + (i+1)*binSize, count: 0 }));
@@ -1151,11 +1218,11 @@ function computeDistribution(rows){
     if(idx < 0) idx = 0;
     bins[idx].count++;
   });
-  return { bins, min, max };
+  return { bins, min, max, mean, median };
 }
 
 function renderRankingPanel(){
-  const { rows, info, myPct, myVal } = computeRanking();
+  const { rows, info, myPct, myVal, myRank } = computeRanking();
   const panel = el('div', {id:'ranking-panel'});
   panel.appendChild(el('div', {class:'rank-head'}, [
     el('div', {}, [
@@ -1165,15 +1232,27 @@ function renderRankingPanel(){
   ]));
   panel.appendChild(el('div', {class:'rank-sub', text: `${info.catName} · ranking dentro del grupo (${rows.length} jugadores)${info.invert ? ' · menor es mejor' : ''}`}));
 
-  // Percentil grande: relaciona de un vistazo el gancho de la rueda con
-  // el número exacto, sin tener que buscarlo en la lista de abajo.
+  // Resumen grande: percentil + valor absoluto + posición en el grupo,
+  // todo junto y de un vistazo, sin tener que bajar a buscarlo en la lista.
   if(myPct !== null){
     const color = bucketColor(myPct);
-    panel.appendChild(el('div', {style:`display:flex;align-items:baseline;gap:10px;padding:10px 4px 14px;border-bottom:1px solid var(--border);margin-bottom:10px;`}, [
-      el('span', {text: String(myPct), style:`font-family:var(--font-display);font-size:44px;font-weight:700;line-height:1;color:${color};`}),
-      el('span', {text: ordinal(myPct).replace(String(myPct), '').trim() || 'th', style:`font-family:var(--font-display);font-size:18px;font-weight:700;color:${color};align-self:flex-start;margin-top:6px;`}),
-      el('span', {text: `percentil · vos: ${fmtVal(myVal)}`, style:'color:var(--ink-faint);font-size:11px;margin-left:2px;'}),
-    ]));
+    const summary = el('div', {class:'fade-in', style:'padding:10px 4px 14px;border-bottom:1px solid var(--border);margin-bottom:10px;'}, [
+      el('div', {style:'display:flex;align-items:baseline;gap:6px;'}, [
+        el('span', {text: ordinal(myPct), style:`font-family:var(--font-display);font-size:40px;font-weight:700;line-height:1;color:${color};`}),
+        el('span', {text:'percentile', style:'color:var(--ink-faint);font-size:12px;font-weight:600;margin-left:2px;'}),
+      ]),
+      el('div', {style:'display:flex;flex-direction:column;gap:3px;margin-top:8px;font-size:12px;'}, [
+        el('div', {style:'display:flex;justify-content:space-between;max-width:220px;'}, [
+          el('span', {text:'Valor', style:'color:var(--ink-faint);'}),
+          el('span', {text: fmtVal(myVal), style:'color:var(--ink);font-family:var(--font-mono);font-weight:700;'}),
+        ]),
+        el('div', {style:'display:flex;justify-content:space-between;max-width:220px;'}, [
+          el('span', {text:'Ranking', style:'color:var(--ink-faint);'}),
+          el('span', {text: myRank ? `#${myRank.rank} de ${myRank.total}` : '—', style:'color:var(--ink);font-family:var(--font-mono);font-weight:700;'}),
+        ]),
+      ]),
+    ]);
+    panel.appendChild(summary);
   }
 
   // Toggle Ranking (lista) / Distribución (histograma) — la lista sirve
@@ -1183,6 +1262,7 @@ function renderRankingPanel(){
   const tabBtn = (key, label) => el('button', {
     type:'button', text: label,
     style:`flex:1;padding:6px 8px;font-size:11.5px;font-weight:700;border-radius:6px;cursor:pointer;
+           transition:background .2s ease, border-color .2s ease, color .2s ease;
            background:${state.rankingView===key ? 'var(--gold-soft)' : 'transparent'};
            border:1px solid ${state.rankingView===key ? 'var(--gold)' : 'var(--border)'};
            color:${state.rankingView===key ? 'var(--gold)' : 'var(--ink-dim)'};`,
@@ -1194,9 +1274,9 @@ function renderRankingPanel(){
   ]));
 
   if(state.rankingView === 'dist'){
-    panel.appendChild(renderDistributionView(rows, myVal));
+    panel.appendChild(el('div', {class:'fade-in'}, [renderDistributionView(rows, myVal)]));
   } else {
-    const list = el('div', {class:'rank-list'});
+    const list = el('div', {class:'rank-list fade-in'});
     const playerRowRef = state.selectedRow;
     rows.forEach((r, i) => {
       const isMe = r.ref === playerRowRef;
@@ -1224,39 +1304,58 @@ function renderRankingPanel(){
   return panel;
 }
 
-/* Histograma simple: cuántos jugadores del grupo caen en cada rango de
-   valores, con la barra del jugador actual resaltada en dorado. */
+/* Histograma: cuántos jugadores del grupo caen en cada rango de valores,
+   con la barra del jugador resaltada en dorado, más una línea vertical
+   exacta (no solo la barra completa) marcando su valor puntual, y media
+   /mediana del grupo debajo para dar contexto sin sobrecargar la vista. */
 function renderDistributionView(rows, myVal){
   const dist = computeDistribution(rows);
-  if(!dist){
+  if(!dist || !dist.bins){
     return el('div', {class:'helptext', text:'No hay suficiente variación de datos para mostrar una distribución.'});
   }
-  const { bins, min, max } = dist;
+  const { bins, min, max, mean, median } = dist;
   const maxCount = Math.max(...bins.map(b => b.count), 1);
   const wrap = el('div', {style:'display:flex;flex-direction:column;gap:10px;'});
+
+  // wrapper relativo para poder superponer la línea+etiqueta de "Tu valor"
+  const chartWrap = el('div', {style:'position:relative;padding-top:22px;'});
   const chart = el('div', {style:'display:flex;align-items:flex-end;gap:3px;height:150px;padding:0 2px;'});
   bins.forEach(b => {
     const isMyBin = myVal !== null && myVal >= b.from && (myVal < b.to || (b === bins[bins.length-1] && myVal <= b.to));
     const h = Math.max(3, Math.round((b.count / maxCount) * 130));
     const bar = el('div', {
       title: `${fmtVal(b.from)} – ${fmtVal(b.to)}: ${b.count} jugador${b.count===1?'':'es'}`,
-      style:`flex:1;height:${h}px;border-radius:3px 3px 0 0;
+      style:`flex:1;height:${h}px;border-radius:3px 3px 0 0;transition:height .25s ease;
              background:${isMyBin ? 'var(--gold)' : 'var(--blue)'};
              opacity:${isMyBin ? '1' : '.55'};`
     });
     chart.appendChild(bar);
   });
-  wrap.appendChild(chart);
+  chartWrap.appendChild(chart);
+
+  // marcador exacto del valor del jugador dentro del rango, con etiqueta arriba
+  if(myVal !== null && max > min){
+    const posPct = Math.min(100, Math.max(0, ((myVal - min) / (max - min)) * 100));
+    chartWrap.appendChild(el('div', {style:`position:absolute;left:${posPct}%;top:22px;bottom:0;width:2px;
+      background:var(--gold);opacity:.9;pointer-events:none;transform:translateX(-1px);`}));
+    chartWrap.appendChild(el('div', {style:`position:absolute;left:${posPct}%;top:0;transform:translateX(-50%);
+      font-size:10px;font-weight:700;color:var(--gold);white-space:nowrap;pointer-events:none;`}, [
+      el('span', {text:'Tu valor'}),
+    ]));
+  }
+  wrap.appendChild(chartWrap);
+
   wrap.appendChild(el('div', {style:'display:flex;justify-content:space-between;font-size:10.5px;color:var(--ink-faint);font-family:var(--font-mono);'}, [
     el('span', {text: fmtVal(min)}),
     el('span', {text: fmtVal(max)}),
   ]));
-  if(myVal !== null){
-    wrap.appendChild(el('div', {style:'display:flex;align-items:center;gap:6px;margin-top:2px;'}, [
-      el('div', {style:'width:10px;height:10px;border-radius:3px;background:var(--gold);flex-shrink:0;'}),
-      el('span', {text: `Tu barra (valor: ${fmtVal(myVal)})`, style:'font-size:11px;color:var(--ink-dim);'}),
-    ]));
-  }
+
+  // media/mediana: línea discreta, poco protagonismo, solo contexto
+  wrap.appendChild(el('div', {style:'display:flex;gap:16px;font-size:10.5px;color:var(--ink-faint);padding-top:2px;border-top:1px solid var(--border);margin-top:2px;'}, [
+    el('span', {}, [el('span', {text:'Media: '}), el('span', {text: fmtVal(mean), style:'color:var(--ink-dim);font-family:var(--font-mono);'})]),
+    el('span', {}, [el('span', {text:'Mediana: '}), el('span', {text: fmtVal(median), style:'color:var(--ink-dim);font-family:var(--font-mono);'})]),
+  ]));
+
   return wrap;
 }
 
@@ -1347,7 +1446,7 @@ async function exportPNG(){
   /* ---- Encabezado compacto: nombre (izq) + bandera (der) arriba;
      club/rol debajo; competición/temporada en una tercera línea más chica
      y en color secundario. Todo responsive vía medición real de texto. ---- */
-  const flagH = 24, flagW = flagDataUri ? flagH * flagAspect : 0;
+  const flagH = 28, flagW = flagDataUri ? flagH * flagAspect : 0;
   const flagGap = flagDataUri ? 14 : 0;
   const nameMaxW = W - MARGIN * 2 - flagW - flagGap;
   const nameFamily = "'Space Grotesk', sans-serif";
@@ -1355,7 +1454,7 @@ async function exportPNG(){
 
   const clubMaxW = W - MARGIN * 2;
   const clubFamily = "'Inter', sans-serif";
-  const clubSize = clubRoleLine ? fitFontSize(clubRoleLine, clubMaxW, clubFamily, 600, 15, 11) : 15;
+  const clubSize = clubRoleLine ? fitFontSize(clubRoleLine, clubMaxW, clubFamily, 700, 16, 11) : 16;
   const compSize = percentileLine ? fitFontSize(percentileLine, clubMaxW, clubFamily, 500, 12, 9.5) : 12;
 
   let headerMarkup = '';
@@ -1364,10 +1463,10 @@ async function exportPNG(){
   }
   if(flagDataUri){
     const flagY = 34 - flagH * 0.78;
-    headerMarkup += `<image href="${flagDataUri}" x="${W - MARGIN - flagW}" y="${flagY}" width="${flagW}" height="${flagH}" preserveAspectRatio="xMidYMid slice" rx="2"/>`;
+    headerMarkup += `<image href="${flagDataUri}" x="${W - MARGIN - flagW}" y="${flagY}" width="${flagW}" height="${flagH}" preserveAspectRatio="xMidYMid slice" rx="3"/>`;
   }
   if(clubRoleLine){
-    headerMarkup += `<text x="${MARGIN}" y="58" text-anchor="start" font-family="${clubFamily}" font-weight="600" font-size="${clubSize}" fill="#AEB6C8">${escapeXml(clubRoleLine)}</text>`;
+    headerMarkup += `<text x="${MARGIN}" y="59" text-anchor="start" font-family="${clubFamily}" font-weight="700" font-size="${clubSize}" fill="#D7DCE6">${escapeXml(clubRoleLine)}</text>`;
   }
   if(percentileLine){
     headerMarkup += `<text x="${MARGIN}" y="79" text-anchor="start" font-family="${clubFamily}" font-weight="500" font-size="${compSize}" fill="#6B7280">${escapeXml(percentileLine)}</text>`;

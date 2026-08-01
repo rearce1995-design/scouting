@@ -239,9 +239,13 @@
     width:100%; max-width:380px; flex-shrink:0;
     background:var(--panel-2); border:1px solid var(--border); border-radius:16px;
     padding:18px; max-height:820px; display:flex; flex-direction:column;
-    animation: rankIn .16s ease-out;
+    animation: rankIn .22s ease-out;
   }
   @keyframes rankIn{ from{ opacity:0; transform:translateX(8px); } to{ opacity:1; transform:translateX(0); } }
+  /* fade-in genérico y sutil (200-300ms) para contenido que se reconstruye:
+     el bloque de percentil grande y el swap Ranking/Distribución. */
+  @keyframes fadeInFast{ from{ opacity:0; transform:translateY(3px); } to{ opacity:1; transform:translateY(0); } }
+  .fade-in{ animation: fadeInFast .22s ease-out; }
   .rank-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:4px;}
   .rank-head h3{margin:0;font-family:var(--font-display);font-size:14.5px;font-weight:600;}
   .rank-sub{font-size:11px;color:var(--ink-faint);margin-bottom:12px;}
@@ -249,6 +253,7 @@
   .rank-row{
     display:grid;grid-template-columns:28px 1fr auto;gap:8px;align-items:center;
     padding:7px 8px;border-radius:7px;font-size:12px;
+    transition:background .2s ease;
   }
   .rank-row .rk-num{color:var(--ink-faint);font-family:var(--font-mono);font-size:11px;}
   .rank-row .rk-name{color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
@@ -256,8 +261,25 @@
   .rank-row.me{background:var(--gold-soft);}
   .rank-row.me .rk-num, .rank-row.me .rk-name, .rank-row.me .rk-val{color:var(--gold);font-weight:700;}
   .metric-wedge{cursor:pointer;}
+  .metric-wedge .wedge-fill, .metric-wedge .wedge-track{transition:filter .2s ease, opacity .2s ease;}
   .metric-wedge:hover .wedge-fill{filter:brightness(1.15);}
   .metric-wedge:hover .wedge-track{filter:brightness(1.3);}
+
+  /* tooltip enriquecido de la rueda (hover sobre una métrica) */
+  #wheel-tooltip{
+    position:absolute; z-index:60; pointer-events:none;
+    background:var(--panel-2); border:1px solid var(--gold); border-radius:9px;
+    padding:10px 12px; min-width:160px;
+    box-shadow:0 10px 28px rgba(0,0,0,.5);
+    opacity:0; transform:translateY(3px) scale(.98);
+    transition:opacity .18s ease, transform .18s ease;
+    visibility:hidden;
+  }
+  #wheel-tooltip.show{ opacity:1; transform:translateY(0) scale(1); visibility:visible; }
+  #wheel-tooltip .wtt-title{font-family:var(--font-display);font-size:12.5px;font-weight:700;color:var(--ink);margin-bottom:6px;}
+  #wheel-tooltip .wtt-row{display:flex;justify-content:space-between;gap:14px;font-size:11px;color:var(--ink-faint);padding:2px 0;}
+  #wheel-tooltip .wtt-row b{color:var(--ink-dim);font-family:var(--font-mono);font-weight:700;font-size:11px;}
+  #wheel-tooltip .wtt-cat{margin-top:6px;padding-top:6px;border-top:1px solid var(--border);font-size:9.5px;letter-spacing:.4px;text-transform:uppercase;color:var(--gold);font-weight:700;}
 
   ::-webkit-scrollbar{width:8px;height:8px;}
   ::-webkit-scrollbar-thumb{background:#232c40;border-radius:8px;}
@@ -270,6 +292,6 @@
   <main id="main"></main>
 </div>
 <!-- IMPORTANT: cargamos app.js como módulo para que "import './presets.js'" funcione -->
-<script type="module" src="app.js?v=20260731-flags-module"></script>
+<script type="module" src="app.js?v=20260731-polish-tooltips-panel"></script>
 </body>
 </html>
