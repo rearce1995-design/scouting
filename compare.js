@@ -15,17 +15,199 @@
 import {
   state, el, opt, sortedRowsForPicker, playerLabel, titleForRow, resolveCountryName,
   groupRows, numVal, computePercentile, fmtVal, renderWheelSVG, renderMain,
+  fetchFlagDataUri, svgStringToPngDataUrl,
 } from './app.js';
 import { countryToFifaCode, flagCdnUrl } from './flags.js';
 
-/* "Descargar PDF": no sumamos ninguna librería nueva (jsPDF, html2canvas,
-   etc.) — usamos el "Guardar como PDF" nativo del navegador via
-   window.print(), con la hoja de estilos @media print de index.html que
-   ya deja todo listo en A4. Es el enfoque más confiable: imprime
-   literalmente el DOM que se ve en pantalla (texto seleccionable, SVG
-   nítido), no una captura rasterizada. */
-function exportComparePDF(){
-  window.print();
+/* Arma la imagen de una rueda (header con nombre/club/bandera + la rueda
+   en sí) para insertar en el PDF. Reusa el <svg> YA renderizado en pantalla
+   (document.getElementById('wheel-svg-a'/'-b')) en vez de generar uno
+   nuevo, porque ese ya tiene aplicado el ajuste de tamaño de las etiquetas
+   (fitLabelsToArcs) que se hace al montarlo en el DOM — generar uno nuevo
+   "al vuelo" para el PDF podría no tener ese ajuste y superponer texto. */
+async function buildWheelImage(row, suffix, accentColor){
+  const svgLive = document.getElementById('wheel-svg-' + suffix);
+  if(!svgLive) return null;
+
+  const serializer = new XMLSerializer();
+  const wheelOuter = serializer.serializeToString(svgLive);
+  const W = 620, HEADER_H = 76, WHEEL_H = 620;
+  const H = HEADER_H + WHEEL_H;
+  const wheelGroup = wheelOuter
+    .replace(/^<svg[^>]*>/i, `<g transform="translate(35, ${HEADER_H + 35})">`)
+    .replace(/<\/svg>$/i, '</g>');
+
+  const countryName = resolveCountryName(row);
+  const fifaCode = countryToFifaCode(countryName);
+  const flag = await fetchFlagDataUri(fifaCode);
+
+  const name = titleForRow(row);
+  const club = state.teamCol ? String(row[state.teamCol] || '').trim() : '';
+  const pos = state.presetUI.position || '';
+  const role = state.presetUI.role || '';
+  const clubRoleLine = [club, (pos && role ? `${pos} (${role})` : (pos || role))].filter(Boolean).join(' · ');
+
+  const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  let header = `<text x="20" y="30" font-family="Space Grotesk, sans-serif" font-weight="700" font-size="23" fill="${accentColor}">${esc(name)}</text>`;
+  if(clubRoleLine){
+    header += `<text x="20" y="52" font-family="Inter, sans-serif" font-weight="700" font-size="12.5" fill="#D7DCE6">${esc(clubRoleLine)}</text>`;
+  }
+  if(flag){
+    const fh = 26, fw = fh * flag.aspect;
+    header += `<image href="${flag.dataUri}" x="${W - 24 - fw}" y="18" width="${fw}" height="${fh}" rx="3"/>`;
+  }
+  header += `<path d="M 20 ${HEADER_H - 10} H ${W - 20}" stroke="${accentColor}" stroke-opacity=".55" stroke-width="1"/>`;
+
+  const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+    <rect width="${W}" height="${H}" fill="#0A0E17"/>
+    ${header}
+    ${wheelGroup}
+  </svg>`;
+
+  const dataUrl = await svgStringToPngDataUrl(svgStr, W, H, '#0A0E17');
+  return { dataUrl, w: W, h: H };
+}
+
+/* "Descargar PDF": genera el archivo directo en el navegador con jsPDF —
+   sin pasar por el diálogo de impresión del sistema operativo (que en
+   algunos entornos se cuelga esperando una impresora real, como reportó
+   el usuario). Arma las dos ruedas como imágenes y la tabla comparativa
+   como texto vectorial real (no una captura de pantalla). */
+async function exportComparePDF(){
+  const { rowA, rowB } = state.compare;
+  if(!rowA || !rowB) return;
+
+  const btn = document.getElementById('cmp-pdf-btn');
+  const originalText = btn ? btn.textContent : '';
+  if(btn){ btn.textContent = 'Generando…'; btn.disabled = true; }
+
+  try{
+    if(!window.jspdf || !window.jspdf.jsPDF){
+      alert('No se pudo cargar la librería de PDF (revisá tu conexión) — intentá de nuevo.');
+      return;
+    }
+    const { jsPDF } = window.jspdf;
+
+    const [imgA, imgB] = await Promise.all([
+      buildWheelImage(rowA, 'a', '#C9A353'),
+      buildWheelImage(rowB, 'b', '#5B85D6'),
+    ]);
+    if(!imgA || !imgB){
+      alert('No se pudieron generar las imágenes de las ruedas. Asegurate de que las dos estén visibles en pantalla e intentá de nuevo.');
+      return;
+    }
+
+    const doc = new jsPDF({ unit:'mm', format:'a4', orientation:'portrait' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const margin = 12;
+    const usableW = pageW - margin * 2;
+
+    const paintPageBg = () => { doc.setFillColor(10, 14, 23); doc.rect(0, 0, pageW, pageH, 'F'); };
+    paintPageBg();
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(15);
+    doc.setTextColor(230, 232, 239);
+    doc.text('Comparación de jugadores', margin, 16);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(139, 143, 156);
+    doc.text(`Generado ${new Date().toLocaleDateString('es-AR')}`, margin, 21.5);
+
+    // dos ruedas lado a lado
+    const gap = 6;
+    const imgW = (usableW - gap) / 2;
+    const imgH = imgW * (imgA.h / imgA.w);
+    const imgY = 26;
+    doc.addImage(imgA.dataUrl, 'PNG', margin, imgY, imgW, imgH);
+    doc.addImage(imgB.dataUrl, 'PNG', margin + imgW + gap, imgY, imgW, imgH);
+
+    // tabla comparativa
+    const group = groupRows();
+    const colW = [usableW * 0.5, usableW * 0.25, usableW * 0.25];
+    const col2X = margin + colW[0];
+    const col3X = col2X + colW[1];
+    let y = imgY + imgH + 11;
+
+    const ensureSpace = (needed) => {
+      if(y + needed > pageH - margin){
+        doc.addPage();
+        paintPageBg();
+        y = margin;
+      }
+    };
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(11.5);
+    doc.setTextColor(230, 232, 239);
+    doc.text('Comparación métrica por métrica', margin, y);
+    y += 6.5;
+
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(201, 163, 83);
+    doc.text(titleForRow(rowA), col2X + colW[1] / 2, y, { align:'center' });
+    doc.setTextColor(91, 133, 214);
+    doc.text(titleForRow(rowB), col3X + colW[2] / 2, y, { align:'center' });
+    y += 3.5;
+    doc.setDrawColor(38, 43, 54);
+    doc.line(margin, y, margin + usableW, y);
+    y += 5.5;
+
+    state.categories.forEach(cat => {
+      const metrics = cat.metrics.filter(m => m.col);
+      if(!metrics.length) return;
+      ensureSpace(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(201, 163, 83);
+      doc.text(String(cat.name || '').toUpperCase(), margin, y);
+      y += 5;
+
+      metrics.forEach(m => {
+        ensureSpace(6);
+        const valA = numVal(rowA, m.col), valB = numVal(rowB, m.col);
+        const pctA = computePercentile(group, m.col, valA, m.invert).pct;
+        const pctB = computePercentile(group, m.col, valB, m.invert).pct;
+        let aWins = false, bWins = false;
+        if(valA !== null && valB !== null && valA !== valB){
+          aWins = m.invert ? valA < valB : valA > valB;
+          bWins = !aWins;
+        }
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8.5);
+        doc.setTextColor(174, 182, 200);
+        doc.text(String(m.label || m.col), margin, y);
+
+        if(aWins){ doc.setFillColor(35, 30, 15); doc.rect(col2X, y - 3.3, colW[1], 4.6, 'F'); }
+        if(bWins){ doc.setFillColor(20, 26, 40); doc.rect(col3X, y - 3.3, colW[2], 4.6, 'F'); }
+
+        const textA = `${fmtVal(valA)}${pctA !== null ? ` · ${pctA}th` : ''}`;
+        const textB = `${fmtVal(valB)}${pctB !== null ? ` · ${pctB}th` : ''}`;
+        doc.setFont('helvetica', aWins ? 'bold' : 'normal');
+        doc.setTextColor(aWins ? 201 : 174, aWins ? 163 : 182, aWins ? 83 : 200);
+        doc.text(textA, col2X + colW[1] / 2, y, { align:'center' });
+        doc.setFont('helvetica', bWins ? 'bold' : 'normal');
+        doc.setTextColor(bWins ? 91 : 174, bWins ? 133 : 182, bWins ? 214 : 200);
+        doc.text(textB, col3X + colW[2] / 2, y, { align:'center' });
+
+        y += 5;
+      });
+      y += 2;
+    });
+
+    const fileName = `comparacion_${titleForRow(rowA)}_vs_${titleForRow(rowB)}.pdf`
+      .replace(/[^\w\s.-]/g, '').replace(/\s+/g, '_');
+    doc.save(fileName);
+  }catch(e){
+    console.error(e);
+    alert('No se pudo generar el PDF. Probá de nuevo.');
+  }finally{
+    if(btn){ btn.textContent = originalText; btn.disabled = false; }
+  }
 }
 
 export function renderModeTabs(){
@@ -83,7 +265,7 @@ export function renderCompareView(){
   wrap.appendChild(wheelsRow);
 
   const pdfBtn = el('div', {class:'no-print', style:'display:flex;justify-content:flex-end;width:100%;max-width:1220px;'}, [
-    el('button', {class:'btn btn-gold', text:'Descargar PDF', onclick: exportComparePDF}),
+    el('button', {id:'cmp-pdf-btn', class:'btn btn-gold', text:'Descargar PDF', onclick: exportComparePDF}),
   ]);
   wrap.appendChild(pdfBtn);
 

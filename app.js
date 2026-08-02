@@ -872,6 +872,57 @@ function positionTooltip(tooltipEl, evt){
   tooltipEl.style.top = Math.max(4, y) + 'px';
 }
 
+/* Trae una bandera como data URI en base64 (mismo patrón ya probado en
+   exportPNG): evita el SecurityError de canvas.toBlob() por CORS al
+   rasterizar, porque no queda ningún pedido de red pendiente en ese
+   momento. Se exporta para que compare.js la reuse en el PDF en vez de
+   duplicar esta lógica. */
+export async function fetchFlagDataUri(fifaCode){
+  if(!fifaCode) return null;
+  try{
+    const resp = await fetch(flagCdnUrl(fifaCode));
+    const blob = await resp.blob();
+    const dataUri = await new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload = () => res(reader.result);
+      reader.onerror = rej;
+      reader.readAsDataURL(blob);
+    });
+    const dims = await new Promise((res) => {
+      const img = new Image();
+      img.onload = () => res({ w: img.naturalWidth, h: img.naturalHeight });
+      img.onerror = () => res(null);
+      img.src = dataUri;
+    });
+    return { dataUri, aspect: (dims && dims.h) ? dims.w / dims.h : 4/3 };
+  }catch(e){ return null; } // sin conexión / bandera no encontrada
+}
+
+/* Rasteriza un string SVG a PNG (data URL) vía canvas @2x, mismo patrón
+   probado en exportPNG. Se exporta para que compare.js arme las imágenes
+   de cada rueda para el PDF sin reimplementar esto. */
+export function svgStringToPngDataUrl(svgString, w, h, bg){
+  return new Promise((resolve, reject) => {
+    const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    img.onload = () => {
+      const scale = 2;
+      const canvas = document.createElement('canvas');
+      canvas.width = w * scale;
+      canvas.height = h * scale;
+      const ctx = canvas.getContext('2d');
+      if(bg){ ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height); }
+      ctx.scale(scale, scale);
+      ctx.drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = (e) => { URL.revokeObjectURL(url); reject(e); };
+    img.src = url;
+  });
+}
+
 function svgEl(tag, attrs={}){
   const e = document.createElementNS('http://www.w3.org/2000/svg', tag);
   for(const k in attrs) e.setAttribute(k, attrs[k]);
