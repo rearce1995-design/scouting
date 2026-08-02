@@ -18,6 +18,16 @@ import {
 } from './app.js';
 import { countryToFifaCode, flagCdnUrl } from './flags.js';
 
+/* "Descargar PDF": no sumamos ninguna librería nueva (jsPDF, html2canvas,
+   etc.) — usamos el "Guardar como PDF" nativo del navegador via
+   window.print(), con la hoja de estilos @media print de index.html que
+   ya deja todo listo en A4. Es el enfoque más confiable: imprime
+   literalmente el DOM que se ve en pantalla (texto seleccionable, SVG
+   nítido), no una captura rasterizada. */
+function exportComparePDF(){
+  window.print();
+}
+
 export function renderModeTabs(){
   const wrap = el('div', {style:'display:flex;gap:8px;width:100%;max-width:1220px;'});
   const tab = (key, label) => el('button', {
@@ -39,7 +49,7 @@ export function renderCompareView(){
   // selector de los dos jugadores a comparar (mismo orden/formato que el
   // picker del modo individual, independiente del jugador único de ahí)
   const sorted = sortedRowsForPicker();
-  const pickerRow = el('div', {style:'display:flex;gap:14px;flex-wrap:wrap;width:100%;max-width:780px;'});
+  const pickerRow = el('div', {class:'no-print', style:'display:flex;gap:14px;flex-wrap:wrap;width:100%;max-width:780px;'});
   const makePicker = (label, key) => {
     const sel = el('select', {style:'min-width:220px;'});
     sel.appendChild(opt('', '— elegir jugador —', !state.compare[key]));
@@ -71,6 +81,11 @@ export function renderCompareView(){
   wheelsRow.appendChild(buildCompareCard(rowA, 'a', 'var(--gold)'));
   wheelsRow.appendChild(buildCompareCard(rowB, 'b', 'var(--blue)'));
   wrap.appendChild(wheelsRow);
+
+  const pdfBtn = el('div', {class:'no-print', style:'display:flex;justify-content:flex-end;width:100%;max-width:1220px;'}, [
+    el('button', {class:'btn btn-gold', text:'Descargar PDF', onclick: exportComparePDF}),
+  ]);
+  wrap.appendChild(pdfBtn);
 
   wrap.appendChild(renderCompareTable(rowA, rowB));
 

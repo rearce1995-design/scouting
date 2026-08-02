@@ -290,6 +290,25 @@
   ::-webkit-scrollbar{width:8px;height:8px;}
   ::-webkit-scrollbar-thumb{background:#232c40;border-radius:8px;}
   ::-webkit-scrollbar-track{background:transparent;}
+
+  /* ---- Exportar a PDF: usa el "Guardar como PDF" nativo del navegador
+     (Ctrl/Cmd+P) en vez de sumar una librería nueva — imprime literalmente
+     lo que ves en pantalla, tamaño A4. Todo lo que es interfaz (sidebar,
+     pestañas, botones, selects, tooltip) se oculta; el contenido de la
+     comparación se reacomoda para entrar prolijo en la hoja. ---- */
+  @media print{
+    @page{ size: A4; margin: 12mm; }
+    *{ -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    html, body{ background: var(--bg) !important; }
+    #sidebar, #export-bar, .mode-tab, .no-print, #wheel-tooltip{ display:none !important; }
+    #app{ display:block !important; min-height:0; }
+    #main{ max-height:none !important; overflow:visible !important; padding:0 !important; gap:10px !important; }
+    #result-row{ gap:10px !important; }
+    .wheel-wrap-card, #wheel-wrap{ max-width:47% !important; padding:10px 12px !important; page-break-inside:avoid; }
+    .wheel-wrap-card h2, #wheel-wrap h2{ font-size:16px !important; }
+    #ranking-panel{ display:none !important; } /* no tiene sentido en una comparación impresa */
+    .cmp-row{ page-break-inside:avoid; }
+  }
 </style>
 </head>
 <body>
