@@ -1,5 +1,6 @@
 import { PRESETS, A, PHYS, M, C, withDiscipline, disciplineCat } from './presets.js';
 import { countryToFifaCode, flagCdnUrl, normalizeCountryName } from './flags.js';
+import { renderModeTabs, renderCompareView } from './compare.js';
 
 /* =========================================================================
    RUEDA DE PERCENTILES — constructor de gráficos tipo "percentile wheel"
@@ -20,10 +21,11 @@ const BUCKET = { elite:'#5B85D6', above:'#4C9A6E', avg:'#C79A52', below:'#BC5049
    mostrar como para armar el selector manual cuando hay más de un
    candidato — así el usuario elige cuál representa en vez de que la app
    adivine mal (ver casos Lookman vs. Stuani). */
-function getNationalityCandidates(){
-  if(!state.selectedRow) return [];
-  const birth = state.birthCol ? String(state.selectedRow[state.birthCol] || '').trim() : '';
-  const passportRaw = state.passportCol ? String(state.selectedRow[state.passportCol] || '').trim() : '';
+function getNationalityCandidates(row){
+  row = row !== undefined ? row : state.selectedRow;
+  if(!row) return [];
+  const birth = state.birthCol ? String(row[state.birthCol] || '').trim() : '';
+  const passportRaw = state.passportCol ? String(row[state.passportCol] || '').trim() : '';
   const passportList = passportRaw.split(',').map(s => s.trim()).filter(Boolean);
   const seen = new Set();
   const out = [];
@@ -43,13 +45,15 @@ function getNationalityCandidates(){
    la mayoría de las veces); si no hay país de nacimiento, se cae al
    primer país listado en el pasaporte. Último recurso: el campo manual
    "Bandera/país" del paso 4. */
-function resolveCountryName(){
-  if(state.selectedRow){
-    if(state.meta.selectedNationality) return state.meta.selectedNationality;
-    const candidates = getNationalityCandidates();
+function resolveCountryName(row){
+  const isSingleMode = row === undefined;
+  row = isSingleMode ? state.selectedRow : row;
+  if(row){
+    if(isSingleMode && state.meta.selectedNationality) return state.meta.selectedNationality;
+    const candidates = getNationalityCandidates(row);
     if(candidates.length) return candidates[0];
   }
-  return String(state.meta.flag || '').trim();
+  return isSingleMode ? String(state.meta.flag || '').trim() : '';
 }
 
 const state = {
@@ -73,7 +77,9 @@ const state = {
     selectedNationality: ''
   },
   presetUI: { position: '', role: '', includePhysical: false },
-  activeRanking: null // { catName, label, col, invert }
+  activeRanking: null, // { catName, label, col, invert }
+  viewMode: 'single', // 'single' | 'compare'
+  compare: { rowA: null, rowB: null },
 };
 
 let catSeq = 0, metSeq = 0;
@@ -269,6 +275,18 @@ function fmtVal(v){
 function formatPlayerTitle(){
   const name = String(state.meta.displayName || '').trim();
   const age = String(state.meta.age || '').trim();
+  if(!name) return '—';
+  return `${name.toUpperCase()}${age ? ` (${age})` : ''}`;
+}
+
+/* Igual que formatPlayerTitle() pero para un jugador cualquiera del modo
+   Comparación — lee directo de las columnas de la fila en vez de los
+   campos editables del paso 4 (esos son solo para el jugador único del
+   modo individual). */
+function titleForRow(row){
+  if(!row || !state.playerCol) return '—';
+  const name = String(row[state.playerCol] || '').trim();
+  const age = state.ageCol ? String(row[state.ageCol] ?? '').trim() : '';
   if(!name) return '—';
   return `${name.toUpperCase()}${age ? ` (${age})` : ''}`;
 }
@@ -980,9 +998,10 @@ function curvedCategoryLabel(svg, defs, cat, a1, a2, idx){
   });
 }
 
-function renderWheelSVG(tooltipEl){
+function renderWheelSVG(tooltipEl, playerRow, interactive){
+  interactive = interactive === undefined ? true : interactive;
   const group = groupRows();
-  const player = state.selectedRow;
+  const player = playerRow !== undefined ? playerRow : state.selectedRow;
   const { flat, catSpans } = buildMetricLayout();
 
   const svg = svgEl('svg', { viewBox: '-45 -45 790 790', width: '100%', height: '100%' });
@@ -1003,8 +1022,8 @@ function renderWheelSVG(tooltipEl){
     const color = bucketColor(pct);
     const outerR = pct === null ? R_HOLE : R_HOLE + (pct/100) * (R_MAX - R_HOLE);
 
-    const wedgeGroup = svgEl('g', { class:'metric-wedge' });
-    wedgeGroup.addEventListener('click', () => openRankingPanel(cat, m));
+    const wedgeGroup = svgEl('g', { class:'metric-wedge', style: interactive ? '' : 'cursor:default;' });
+    if(interactive) wedgeGroup.addEventListener('click', () => openRankingPanel(cat, m));
 
     if(tooltipEl){
       const label = m.label || m.col;
@@ -1085,7 +1104,27 @@ function renderMain(){
     main.appendChild(frag);
     return;
   }
-  if(!state.selectedRow || !state.categories.some(c=>c.metrics.some(m=>m.col))){
+
+  const hasMetrics = state.categories.some(c=>c.metrics.some(m=>m.col));
+
+  // Pestañas Rueda individual / Comparación — solo tienen sentido una vez
+  // que hay al menos una métrica cargada (si no, no hay nada que comparar).
+  if(hasMetrics){
+    frag.appendChild(renderModeTabs());
+  }
+
+  if(state.viewMode === 'compare' && hasMetrics){
+    frag.appendChild(renderCompareView());
+    main.innerHTML = '';
+    main.appendChild(frag);
+    try{
+      fitLabelsToArcs(document.getElementById('wheel-svg-a'));
+      fitLabelsToArcs(document.getElementById('wheel-svg-b'));
+    }catch(e){}
+    return;
+  }
+
+  if(!state.selectedRow || !hasMetrics){
     const empty = el('div', {id:'empty-state'}, []);
     empty.innerHTML = '<b>Casi listo</b><br>Elegí un jugador (paso 4) y al menos una métrica (paso 3), después tocá <b>Generar gráfico</b>.';
     frag.appendChild(empty);
@@ -1176,6 +1215,7 @@ function renderMain(){
 }
 
 /* ---- Ranking: click en una métrica de la rueda muestra dónde queda el jugador en el grupo ---- */
+
 function openRankingPanel(cat, m){
   state.activeRanking = { catName: cat.name, label: m.label || m.col, col: m.col, invert: !!m.invert };
   renderMain();
@@ -1585,3 +1625,10 @@ function refreshAll(){
 }
 
 document.addEventListener('DOMContentLoaded', refreshAll);
+
+// Se exporta para que compare.js (pestaña de comparación) pueda reusar
+// estas piezas en vez de reimplementarlas.
+export {
+  state, el, sortedRowsForPicker, playerLabel, titleForRow, resolveCountryName,
+  groupRows, numVal, computePercentile, fmtVal, renderWheelSVG, renderMain,
+};
