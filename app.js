@@ -1629,6 +1629,6 @@ document.addEventListener('DOMContentLoaded', refreshAll);
 // Se exporta para que compare.js (pestaña de comparación) pueda reusar
 // estas piezas en vez de reimplementarlas.
 export {
-  state, el, sortedRowsForPicker, playerLabel, titleForRow, resolveCountryName,
+  state, el, opt, sortedRowsForPicker, playerLabel, titleForRow, resolveCountryName,
   groupRows, numVal, computePercentile, fmtVal, renderWheelSVG, renderMain,
 };

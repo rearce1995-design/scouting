@@ -13,7 +13,7 @@
    ========================================================================= */
 
 import {
-  state, el, sortedRowsForPicker, playerLabel, titleForRow, resolveCountryName,
+  state, el, opt, sortedRowsForPicker, playerLabel, titleForRow, resolveCountryName,
   groupRows, numVal, computePercentile, fmtVal, renderWheelSVG, renderMain,
 } from './app.js';
 import { countryToFifaCode, flagCdnUrl } from './flags.js';
@@ -42,9 +42,9 @@ export function renderCompareView(){
   const pickerRow = el('div', {style:'display:flex;gap:14px;flex-wrap:wrap;width:100%;max-width:780px;'});
   const makePicker = (label, key) => {
     const sel = el('select', {style:'min-width:220px;'});
-    sel.appendChild(el('option', {value:'', text:'— elegir jugador —'}));
+    sel.appendChild(opt('', '— elegir jugador —', !state.compare[key]));
     sorted.forEach((r, i) => {
-      sel.appendChild(el('option', {value:String(i), text: playerLabel(r), selected: state.compare[key]===r}));
+      sel.appendChild(opt(String(i), playerLabel(r), state.compare[key] === r));
     });
     sel.addEventListener('change', (e) => {
       const idx = e.target.value === '' ? -1 : parseInt(e.target.value, 10);
