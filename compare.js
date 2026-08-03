@@ -111,53 +111,70 @@ async function exportComparePDF(){
     }
 
     const doc = new jsPDF({ unit:'mm', format:'a4', orientation:'portrait' });
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
-    const margin = 10;
-    const usableW = pageW - margin * 2;
+    const paintPageBg = (w, h) => { doc.setFillColor(10, 14, 23); doc.rect(0, 0, w, h, 'F'); };
 
-    const paintPageBg = () => { doc.setFillColor(10, 14, 23); doc.rect(0, 0, pageW, pageH, 'F'); };
-    paintPageBg();
+    /* ---- Páginas 1 y 2 (vertical): una rueda por página, cada una lo más
+       grande posible. Es la opción que más agranda de las que evaluamos:
+       una sola rueda en su propia hoja vertical llega a ~186mm de ancho —
+       más grande que dos lado a lado en horizontal (~135mm) o apiladas
+       juntas en una misma hoja (~112mm), porque no comparte ancho ni alto
+       con nada más. */
+    let pageW = doc.internal.pageSize.getWidth();
+    let pageH = doc.internal.pageSize.getHeight();
+    let margin = 12;
+    let usableW = pageW - margin * 2;
 
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(15);
-    doc.setTextColor(230, 232, 239);
-    doc.text('Comparación de jugadores', margin, 15);
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(139, 143, 156);
-    doc.text(`Generado ${new Date().toLocaleDateString('es-AR')}`, margin, 20);
+    const drawWheelPage = (img, row, idx) => {
+      paintPageBg(pageW, pageH);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(15);
+      doc.setTextColor(230, 232, 239);
+      doc.text('Comparación de jugadores', margin, 15);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(139, 143, 156);
+      doc.text(`Jugador ${idx} de 2 · Generado ${new Date().toLocaleDateString('es-AR')} · tabla comparativa en la última página`, margin, 20.5);
 
-    // dos ruedas lado a lado — lo más grandes posible dentro del ancho útil
-    const gap = 4;
-    const imgW = (usableW - gap) / 2;
-    const imgH = imgW * (imgA.h / imgA.w);
-    const imgY = 24;
-    doc.addImage(imgA.dataUrl, 'PNG', margin, imgY, imgW, imgH);
-    doc.addImage(imgB.dataUrl, 'PNG', margin + imgW + gap, imgY, imgW, imgH);
+      const w = usableW;
+      const h = w * (img.h / img.w);
+      const y = 28;
+      doc.addImage(img.dataUrl, 'PNG', margin, y, w, h);
+    };
 
-    // tabla comparativa — con más aire respecto de las ruedas
+    drawWheelPage(imgA, rowA, 1);
+    doc.addPage('a4', 'portrait');
+    drawWheelPage(imgB, rowB, 2);
+    doc.addPage('a4', 'portrait');
+
+    /* ---- Página 3 (vertical): la tabla comparativa completa, con su
+       propio encabezado. ---- */
+    pageW = doc.internal.pageSize.getWidth();
+    pageH = doc.internal.pageSize.getHeight();
+    margin = 12;
+    usableW = pageW - margin * 2;
+    paintPageBg(pageW, pageH);
+
     const group = groupRows();
     const colW = [usableW * 0.5, usableW * 0.25, usableW * 0.25];
     const col2X = margin + colW[0];
     const col3X = col2X + colW[1];
-    let y = imgY + imgH + 16;
+    let y = margin + 6;
 
     const ensureSpace = (needed) => {
       if(y + needed > pageH - margin){
-        doc.addPage();
-        paintPageBg();
+        doc.addPage('a4', 'portrait');
+        paintPageBg(pageW, pageH);
         y = margin;
       }
     };
 
     doc.setFont('helvetica', 'bold');
-    doc.setFontSize(11.5);
+    doc.setFontSize(13);
     doc.setTextColor(230, 232, 239);
     doc.text('Comparación métrica por métrica', margin, y);
-    y += 6.5;
+    y += 8;
 
-    doc.setFontSize(8.5);
+    doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(201, 163, 83);
     doc.text(titleForRow(rowA), col2X + colW[1] / 2, y, { align:'center' });
@@ -166,20 +183,20 @@ async function exportComparePDF(){
     y += 3.5;
     doc.setDrawColor(38, 43, 54);
     doc.line(margin, y, margin + usableW, y);
-    y += 5.5;
+    y += 6;
 
     state.categories.forEach(cat => {
       const metrics = cat.metrics.filter(m => m.col);
       if(!metrics.length) return;
-      ensureSpace(10);
+      ensureSpace(11);
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8);
+      doc.setFontSize(8.5);
       doc.setTextColor(201, 163, 83);
       doc.text(String(cat.name || '').toUpperCase(), margin, y);
-      y += 5;
+      y += 5.5;
 
       metrics.forEach(m => {
-        ensureSpace(6);
+        ensureSpace(6.5);
         const valA = numVal(rowA, m.col), valB = numVal(rowB, m.col);
         const pctA = computePercentile(group, m.col, valA, m.invert).pct;
         const pctB = computePercentile(group, m.col, valB, m.invert).pct;
@@ -190,12 +207,12 @@ async function exportComparePDF(){
         }
 
         doc.setFont('helvetica', 'normal');
-        doc.setFontSize(8.5);
+        doc.setFontSize(9);
         doc.setTextColor(174, 182, 200);
         doc.text(String(m.label || m.col), margin, y);
 
-        if(aWins){ doc.setFillColor(35, 30, 15); doc.rect(col2X, y - 3.3, colW[1], 4.6, 'F'); }
-        if(bWins){ doc.setFillColor(20, 26, 40); doc.rect(col3X, y - 3.3, colW[2], 4.6, 'F'); }
+        if(aWins){ doc.setFillColor(35, 30, 15); doc.rect(col2X, y - 3.5, colW[1], 5, 'F'); }
+        if(bWins){ doc.setFillColor(20, 26, 40); doc.rect(col3X, y - 3.5, colW[2], 5, 'F'); }
 
         const textA = `${fmtVal(valA)}${pctA !== null ? ` · ${pctA}th` : ''}`;
         const textB = `${fmtVal(valB)}${pctB !== null ? ` · ${pctB}th` : ''}`;
@@ -206,9 +223,9 @@ async function exportComparePDF(){
         doc.setTextColor(bWins ? 91 : 174, bWins ? 133 : 182, bWins ? 214 : 200);
         doc.text(textB, col3X + colW[2] / 2, y, { align:'center' });
 
-        y += 5;
+        y += 5.5;
       });
-      y += 2;
+      y += 2.5;
     });
 
     const fileName = `comparacion_${titleForRow(rowA)}_vs_${titleForRow(rowB)}.pdf`
