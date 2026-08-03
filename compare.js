@@ -15,7 +15,7 @@
 import {
   state, el, opt, sortedRowsForPicker, playerLabel, titleForRow, resolveCountryName,
   groupRows, numVal, computePercentile, fmtVal, renderWheelSVG, renderMain,
-  fetchFlagDataUri, svgStringToPngDataUrl,
+  fetchFlagDataUri, svgStringToPngDataUrl, ordinal,
 } from './app.js';
 import { countryToFifaCode, flagCdnUrl } from './flags.js';
 
@@ -146,8 +146,63 @@ async function exportComparePDF(){
     drawWheelPage(imgB, rowB, 2);
     doc.addPage('a4', 'portrait');
 
-    /* ---- Página 3 (vertical): la tabla comparativa completa, con su
+    /* ---- Página 3 (vertical): Resumen automático + comparación por
+       categorías — una lectura rápida antes del detalle métrica por
+       métrica de la página siguiente. ---- */
+    doc.addPage('a4', 'portrait');
+    pageW = doc.internal.pageSize.getWidth();
+    pageH = doc.internal.pageSize.getHeight();
+    margin = 12;
+    usableW = pageW - margin * 2;
+    paintPageBg(pageW, pageH);
+
+    const summary = computeComparisonSummary(rowA, rowB);
+    let sy = margin + 6;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(230, 232, 239);
+    doc.text('Resumen', margin, sy);
+    sy += 8;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(174, 182, 200);
+    buildSummaryLines(summary).forEach(line => {
+      const wrapped = doc.splitTextToSize('•  ' + line, usableW - 2);
+      wrapped.forEach((wLine, i) => {
+        doc.text(wLine, margin + (i === 0 ? 0 : 4), sy);
+        sy += 5.2;
+      });
+      sy += 1.5;
+    });
+
+    sy += 6;
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(230, 232, 239);
+    doc.text('Comparación por categorías', margin, sy);
+    sy += 9;
+
+    summary.catWinners.forEach(c => {
+      const winnerName = c.winner === 'A' ? summary.nameA : c.winner === 'B' ? summary.nameB : 'Empate';
+      const rgb = c.winner === 'A' ? [201,163,83] : c.winner === 'B' ? [91,133,214] : [139,143,156];
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(174, 182, 200);
+      doc.text(c.name, margin, sy);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(rgb[0], rgb[1], rgb[2]);
+      doc.text(winnerName, margin + usableW, sy, { align:'right' });
+      sy += 4;
+      doc.setDrawColor(38, 43, 54);
+      doc.line(margin, sy - 2, margin + usableW, sy - 2);
+      sy += 3.5;
+    });
+
+    /* ---- Página 4 (vertical): la tabla comparativa completa, con su
        propio encabezado. ---- */
+    doc.addPage('a4', 'portrait');
     pageW = doc.internal.pageSize.getWidth();
     pageH = doc.internal.pageSize.getHeight();
     margin = 12;
@@ -211,16 +266,17 @@ async function exportComparePDF(){
         doc.setTextColor(174, 182, 200);
         doc.text(String(m.label || m.col), margin, y);
 
-        if(aWins){ doc.setFillColor(35, 30, 15); doc.rect(col2X, y - 3.5, colW[1], 5, 'F'); }
-        if(bWins){ doc.setFillColor(20, 26, 40); doc.rect(col3X, y - 3.5, colW[2], 5, 'F'); }
+        doc.setDrawColor(201, 163, 83);
+        if(aWins){ doc.setFillColor(35, 30, 15); doc.setLineWidth(0.35); doc.rect(col2X, y - 3.5, colW[1], 5, 'FD'); }
+        if(bWins){ doc.setFillColor(35, 30, 15); doc.setLineWidth(0.35); doc.rect(col3X, y - 3.5, colW[2], 5, 'FD'); }
 
-        const textA = `${fmtVal(valA)}${pctA !== null ? ` · ${pctA}th` : ''}`;
-        const textB = `${fmtVal(valB)}${pctB !== null ? ` · ${pctB}th` : ''}`;
+        const textA = `${aWins ? '● ' : ''}${fmtVal(valA)}${pctA !== null ? ` · ${ordinal(pctA)}` : ''}`;
+        const textB = `${bWins ? '● ' : ''}${fmtVal(valB)}${pctB !== null ? ` · ${ordinal(pctB)}` : ''}`;
         doc.setFont('helvetica', aWins ? 'bold' : 'normal');
         doc.setTextColor(aWins ? 201 : 174, aWins ? 163 : 182, aWins ? 83 : 200);
         doc.text(textA, col2X + colW[1] / 2, y, { align:'center' });
         doc.setFont('helvetica', bWins ? 'bold' : 'normal');
-        doc.setTextColor(bWins ? 91 : 174, bWins ? 133 : 182, bWins ? 214 : 200);
+        doc.setTextColor(bWins ? 201 : 174, bWins ? 163 : 182, bWins ? 83 : 200);
         doc.text(textB, col3X + colW[2] / 2, y, { align:'center' });
 
         y += 5.5;
@@ -239,6 +295,138 @@ async function exportComparePDF(){
   }
 }
 
+/* Recorre todas las métricas UNA sola vez y calcula todo lo que necesitan
+   el resumen automático, la tabla por categorías y el PDF: quién gana
+   cada métrica, cuántas gana cada uno en total, en qué se destaca cada
+   uno (mayor diferencia de percentil a favor) y quién domina cada
+   categoría. Se comparte entre la vista web y el PDF para que nunca
+   puedan mostrar números distintos. */
+function computeComparisonSummary(rowA, rowB){
+  const group = groupRows();
+  let winsA = 0, winsB = 0, ties = 0, total = 0;
+  const rowsData = [];
+  const catTally = []; // [{name, a, b, total}] en el mismo orden que state.categories
+
+  state.categories.forEach(cat => {
+    const metrics = cat.metrics.filter(m => m.col);
+    if(!metrics.length) return;
+    const tally = { name: cat.name, a: 0, b: 0, total: 0 };
+    catTally.push(tally);
+    metrics.forEach(m => {
+      const valA = numVal(rowA, m.col), valB = numVal(rowB, m.col);
+      if(valA === null || valB === null) return; // no comparable para alguno de los dos
+      const pctA = computePercentile(group, m.col, valA, m.invert).pct;
+      const pctB = computePercentile(group, m.col, valB, m.invert).pct;
+      total++; tally.total++;
+      let winner = 'tie';
+      if(valA !== valB){
+        winner = (m.invert ? valA < valB : valA > valB) ? 'A' : 'B';
+      }
+      if(winner === 'A'){ winsA++; tally.a++; }
+      else if(winner === 'B'){ winsB++; tally.b++; }
+      else ties++;
+      rowsData.push({ label: m.label || m.col, catName: cat.name, pctA, pctB, winner });
+    });
+  });
+
+  const standoutsFor = (who, n = 2) => rowsData
+    .filter(r => r.winner === who && r.pctA !== null && r.pctB !== null)
+    .map(r => ({ ...r, diff: who === 'A' ? r.pctA - r.pctB : r.pctB - r.pctA }))
+    .sort((x, y) => y.diff - x.diff)
+    .slice(0, n)
+    .map(r => r.label);
+
+  const catWinners = catTally.map(t => ({
+    name: t.name,
+    winner: t.a > t.b ? 'A' : (t.b > t.a ? 'B' : 'tie'),
+    a: t.a, b: t.b, total: t.total,
+  }));
+
+  // categorías donde uno gana TODAS las métricas ("domina" en el sentido fuerte)
+  const sweepFor = (who) => catWinners.filter(c => c.total > 0 && (who === 'A' ? c.a : c.b) === c.total).map(c => c.name);
+
+  return {
+    nameA: titleForRow(rowA), nameB: titleForRow(rowB),
+    winsA, winsB, ties, total,
+    standoutsA: standoutsFor('A'), standoutsB: standoutsFor('B'),
+    sweepA: sweepFor('A'), sweepB: sweepFor('B'),
+    catWinners,
+  };
+}
+
+/* Arma las 2-4 líneas de texto del resumen automático a partir de lo que
+   calculó computeComparisonSummary — mismo texto para la web y el PDF. */
+function buildSummaryLines(s){
+  const lines = [];
+  if(s.total === 0) return lines;
+
+  if(s.winsA === s.winsB){
+    lines.push(`${s.nameA} y ${s.nameB} están parejos: cada uno gana ${s.winsA} de ${s.total} métricas comparables${s.ties ? ` (${s.ties} empatadas)` : ''}.`);
+  }else{
+    const leaderName = s.winsA > s.winsB ? s.nameA : s.nameB;
+    const otherName = s.winsA > s.winsB ? s.nameB : s.nameA;
+    const leaderWins = Math.max(s.winsA, s.winsB), otherWins = Math.min(s.winsA, s.winsB);
+    lines.push(`${leaderName} supera a ${otherName} en ${leaderWins} de ${s.total} métricas${s.ties ? ` (${s.ties} empatadas)` : ''} — ${otherName} gana ${otherWins}.`);
+  }
+
+  if(s.standoutsA.length){
+    lines.push(`${s.nameA} destaca especialmente en ${joinList(s.standoutsA)}.`);
+  }
+  if(s.standoutsB.length){
+    lines.push(`${s.nameB} destaca especialmente en ${joinList(s.standoutsB)}.`);
+  }
+  if(s.sweepA.length){
+    lines.push(`${s.nameA} domina ${joinList(s.sweepA)} — gana todas las métricas de esa${s.sweepA.length>1?'s':''} categoría${s.sweepA.length>1?'s':''}.`);
+  }
+  if(s.sweepB.length){
+    lines.push(`${s.nameB} domina ${joinList(s.sweepB)} — gana todas las métricas de esa${s.sweepB.length>1?'s':''} categoría${s.sweepB.length>1?'s':''}.`);
+  }
+  return lines;
+}
+
+function joinList(arr){
+  if(arr.length === 1) return arr[0];
+  return arr.slice(0, -1).join(', ') + ' y ' + arr[arr.length - 1];
+}
+
+/* Resumen automático (web): bullets con lo que ya calculó computeComparisonSummary. */
+function renderSummaryPanel(summary){
+  const lines = buildSummaryLines(summary);
+  if(!lines.length) return el('div', {});
+  const box = el('div', {class:'fade-in', style:'background:var(--panel-2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;width:100%;max-width:1400px;'});
+  box.appendChild(el('div', {text:'Resumen', style:'font-family:var(--font-display);font-size:13.5px;font-weight:700;color:var(--ink);margin-bottom:8px;'}));
+  const list = el('div', {style:'display:flex;flex-direction:column;gap:5px;'});
+  lines.forEach(line => {
+    list.appendChild(el('div', {style:'display:flex;gap:8px;font-size:12.5px;color:var(--ink-dim);line-height:1.5;'}, [
+      el('span', {text:'•', style:'color:var(--gold);flex-shrink:0;'}),
+      el('span', {text:line}),
+    ]));
+  });
+  box.appendChild(list);
+  return box;
+}
+
+/* Comparación por categorías (web): quién gana cada categoría de un vistazo. */
+function renderCategoryWinnersPanel(summary){
+  if(!summary.catWinners.length) return el('div', {});
+  const box = el('div', {class:'fade-in', style:'background:var(--panel-2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;width:100%;max-width:1400px;'});
+  box.appendChild(el('div', {text:'Comparación por categorías', style:'font-family:var(--font-display);font-size:13.5px;font-weight:700;color:var(--ink);margin-bottom:10px;'}));
+  const grid = el('div', {style:'display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:8px;'});
+  summary.catWinners.forEach(c => {
+    const winnerName = c.winner === 'A' ? summary.nameA : c.winner === 'B' ? summary.nameB : null;
+    const winnerColor = c.winner === 'A' ? 'var(--gold)' : c.winner === 'B' ? 'var(--blue)' : 'var(--ink-faint)';
+    grid.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;background:#0D1220;border-radius:8px;border:1px solid var(--border);'}, [
+      el('span', {text:c.name, style:'font-size:11px;color:var(--ink-dim);'}),
+      el('span', {style:`display:flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;color:${winnerColor};`}, [
+        winnerName ? el('span', {style:`width:7px;height:7px;border-radius:50%;background:${winnerColor};flex-shrink:0;`}) : null,
+        el('span', {text: winnerName || 'Empate'}),
+      ]),
+    ]));
+  });
+  box.appendChild(grid);
+  return box;
+}
+
 export function renderModeTabs(){
   const wrap = el('div', {style:'display:flex;gap:8px;width:100%;max-width:1220px;'});
   const tab = (key, label) => el('button', {
@@ -255,7 +443,7 @@ export function renderModeTabs(){
 }
 
 export function renderCompareView(){
-  const wrap = el('div', {class:'fade-in', style:'width:100%;max-width:1400px;display:flex;flex-direction:column;gap:16px;align-items:center;'});
+  const wrap = el('div', {class:'fade-in', style:'width:100%;max-width:1400px;display:flex;flex-direction:column;gap:10px;align-items:center;'});
 
   // selector de los dos jugadores a comparar (mismo orden/formato que el
   // picker del modo individual, independiente del jugador único de ahí)
@@ -293,6 +481,10 @@ export function renderCompareView(){
   wheelsRow.appendChild(buildCompareCard(rowB, 'b', 'var(--blue)'));
   wrap.appendChild(wheelsRow);
 
+  const summary = computeComparisonSummary(rowA, rowB);
+  wrap.appendChild(renderSummaryPanel(summary));
+  wrap.appendChild(renderCategoryWinnersPanel(summary));
+
   const pdfBtn = el('div', {class:'no-print', style:'display:flex;justify-content:flex-end;width:100%;max-width:1400px;'}, [
     el('button', {id:'cmp-pdf-btn', class:'btn btn-gold', text:'Descargar PDF', onclick: exportComparePDF}),
   ]);
@@ -309,8 +501,8 @@ export function renderCompareView(){
    ese rol acá). El nombre/club/bandera salen directo de la fila, no de
    los campos editables del paso 4 (esos son solo para el modo individual). */
 function buildCompareCard(row, suffix, accentColor){
-  const card = el('div', {class:'wheel-wrap-card'});
-  const headerRow = el('div', {style:'display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:2px 4px 10px;'});
+  const card = el('div', {class:'wheel-wrap-card', style:'padding-top:10px;'});
+  const headerRow = el('div', {style:'display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:2px 4px 6px;'});
   const club = state.teamCol ? String(row[state.teamCol] || '').trim() : '';
   const pos = state.presetUI.position || '';
   const role = state.presetUI.role || '';
@@ -329,7 +521,7 @@ function buildCompareCard(row, suffix, accentColor){
   headerRow.appendChild(titleBlock);
   headerRow.appendChild(flagBlock);
   card.appendChild(headerRow);
-  card.appendChild(el('div', {style:`height:1px;background:linear-gradient(90deg, ${accentColor}, transparent);margin:0 4px 8px;`}));
+  card.appendChild(el('div', {style:`height:1px;background:linear-gradient(90deg, ${accentColor}, transparent);margin:0 4px 5px;`}));
 
   const svgWrap = el('div', {style:'width:100%;aspect-ratio:1/1;max-width:600px;margin:0 auto;position:relative;'});
   const tooltipEl = el('div', {id:'wheel-tooltip'});
@@ -369,14 +561,16 @@ function renderCompareTable(rowA, rowB){
         aWins = m.invert ? valA < valB : valA > valB;
         bWins = !aWins;
       }
-      const cellStyle = (isWinner) => `font-size:12px;text-align:center;padding:6px 4px;border-radius:6px;font-family:var(--font-mono);
+      const cellStyle = (isWinner) => `font-size:12px;text-align:center;padding:5px 6px;border-radius:6px;font-family:var(--font-mono);
         background:${isWinner ? 'var(--gold-soft)' : 'transparent'};
+        border:1.5px solid ${isWinner ? 'var(--gold)' : 'transparent'};
         color:${isWinner ? 'var(--gold)' : 'var(--ink-dim)'};
         font-weight:${isWinner ? '700' : '500'};`;
+      const cellText = (val, pct, isWinner) => `${isWinner ? '● ' : ''}${fmtVal(val)}${pct!==null ? ` · ${ordinal(pct)}` : ''}`;
       box.appendChild(el('div', {class:'cmp-row', style:'display:grid;grid-template-columns:1fr 140px 140px;gap:10px;align-items:center;padding:3px 4px;border-radius:6px;'}, [
         el('span', {text: m.label || m.col, style:'font-size:12px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'}),
-        el('span', {text: `${fmtVal(valA)}${pctA!==null ? ` · ${pctA}th` : ''}`, style: cellStyle(aWins)}),
-        el('span', {text: `${fmtVal(valB)}${pctB!==null ? ` · ${pctB}th` : ''}`, style: cellStyle(bWins)}),
+        el('span', {text: cellText(valA, pctA, aWins), style: cellStyle(aWins)}),
+        el('span', {text: cellText(valB, pctB, bWins), style: cellStyle(bWins)}),
       ]));
     });
   });

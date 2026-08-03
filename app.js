@@ -1681,5 +1681,5 @@ document.addEventListener('DOMContentLoaded', refreshAll);
 // estas piezas en vez de reimplementarlas.
 export {
   state, el, opt, sortedRowsForPicker, playerLabel, titleForRow, resolveCountryName,
-  groupRows, numVal, computePercentile, fmtVal, renderWheelSVG, renderMain,
+  groupRows, numVal, computePercentile, fmtVal, renderWheelSVG, renderMain, ordinal,
 };
