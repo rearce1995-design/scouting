@@ -31,10 +31,22 @@ async function buildWheelImage(row, suffix, accentColor){
 
   const serializer = new XMLSerializer();
   const wheelOuter = serializer.serializeToString(svgLive);
-  const W = 620, HEADER_H = 76, WHEEL_H = 620;
-  const H = HEADER_H + WHEEL_H;
+
+  // La rueda original tiene viewBox="-45 -45 790 790" (790 unidades).
+  // BUG que arreglé acá: antes solo trasladaba ese contenido dentro de un
+  // lienzo más chico sin escalarlo, así que la mitad quedaba recortada
+  // fuera del viewBox de la imagen. Ahora se escala correctamente a
+  // WHEEL_DEST y se compensa el origen -45 ya escalado.
+  const WHEEL_SRC = 790;
+  const WHEEL_DEST = 720; // tamaño final de la rueda dentro de la imagen — grande, para que el texto se lea bien
+  const scale = WHEEL_DEST / WHEEL_SRC;
+  const PAD = 24, HEADER_H = 92;
+  const W = WHEEL_DEST + PAD * 2;
+  const H = HEADER_H + WHEEL_DEST + PAD * 2;
+  const tx = PAD + 45 * scale;
+  const ty = HEADER_H + PAD + 45 * scale;
   const wheelGroup = wheelOuter
-    .replace(/^<svg[^>]*>/i, `<g transform="translate(35, ${HEADER_H + 35})">`)
+    .replace(/^<svg[^>]*>/i, `<g transform="translate(${tx}, ${ty}) scale(${scale})">`)
     .replace(/<\/svg>$/i, '</g>');
 
   const countryName = resolveCountryName(row);
@@ -49,15 +61,15 @@ async function buildWheelImage(row, suffix, accentColor){
 
   const esc = (s) => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
-  let header = `<text x="20" y="30" font-family="Space Grotesk, sans-serif" font-weight="700" font-size="23" fill="${accentColor}">${esc(name)}</text>`;
+  let header = `<text x="${PAD}" y="32" font-family="Space Grotesk, sans-serif" font-weight="700" font-size="26" fill="${accentColor}">${esc(name)}</text>`;
   if(clubRoleLine){
-    header += `<text x="20" y="52" font-family="Inter, sans-serif" font-weight="700" font-size="12.5" fill="#D7DCE6">${esc(clubRoleLine)}</text>`;
+    header += `<text x="${PAD}" y="56" font-family="Inter, sans-serif" font-weight="700" font-size="14" fill="#D7DCE6">${esc(clubRoleLine)}</text>`;
   }
   if(flag){
-    const fh = 26, fw = fh * flag.aspect;
-    header += `<image href="${flag.dataUri}" x="${W - 24 - fw}" y="18" width="${fw}" height="${fh}" rx="3"/>`;
+    const fh = 30, fw = fh * flag.aspect;
+    header += `<image href="${flag.dataUri}" x="${W - PAD - fw}" y="18" width="${fw}" height="${fh}" rx="3"/>`;
   }
-  header += `<path d="M 20 ${HEADER_H - 10} H ${W - 20}" stroke="${accentColor}" stroke-opacity=".55" stroke-width="1"/>`;
+  header += `<path d="M ${PAD} ${HEADER_H - 12} H ${W - PAD}" stroke="${accentColor}" stroke-opacity=".55" stroke-width="1"/>`;
 
   const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
     <rect width="${W}" height="${H}" fill="#0A0E17"/>
@@ -101,7 +113,7 @@ async function exportComparePDF(){
     const doc = new jsPDF({ unit:'mm', format:'a4', orientation:'portrait' });
     const pageW = doc.internal.pageSize.getWidth();
     const pageH = doc.internal.pageSize.getHeight();
-    const margin = 12;
+    const margin = 10;
     const usableW = pageW - margin * 2;
 
     const paintPageBg = () => { doc.setFillColor(10, 14, 23); doc.rect(0, 0, pageW, pageH, 'F'); };
@@ -110,26 +122,26 @@ async function exportComparePDF(){
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(15);
     doc.setTextColor(230, 232, 239);
-    doc.text('Comparación de jugadores', margin, 16);
+    doc.text('Comparación de jugadores', margin, 15);
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.setTextColor(139, 143, 156);
-    doc.text(`Generado ${new Date().toLocaleDateString('es-AR')}`, margin, 21.5);
+    doc.text(`Generado ${new Date().toLocaleDateString('es-AR')}`, margin, 20);
 
-    // dos ruedas lado a lado
-    const gap = 6;
+    // dos ruedas lado a lado — lo más grandes posible dentro del ancho útil
+    const gap = 4;
     const imgW = (usableW - gap) / 2;
     const imgH = imgW * (imgA.h / imgA.w);
-    const imgY = 26;
+    const imgY = 24;
     doc.addImage(imgA.dataUrl, 'PNG', margin, imgY, imgW, imgH);
     doc.addImage(imgB.dataUrl, 'PNG', margin + imgW + gap, imgY, imgW, imgH);
 
-    // tabla comparativa
+    // tabla comparativa — con más aire respecto de las ruedas
     const group = groupRows();
     const colW = [usableW * 0.5, usableW * 0.25, usableW * 0.25];
     const col2X = margin + colW[0];
     const col3X = col2X + colW[1];
-    let y = imgY + imgH + 11;
+    let y = imgY + imgH + 16;
 
     const ensureSpace = (needed) => {
       if(y + needed > pageH - margin){
