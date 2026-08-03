@@ -255,7 +255,7 @@ export function renderModeTabs(){
 }
 
 export function renderCompareView(){
-  const wrap = el('div', {class:'fade-in', style:'width:100%;max-width:1220px;display:flex;flex-direction:column;gap:16px;align-items:center;'});
+  const wrap = el('div', {class:'fade-in', style:'width:100%;max-width:1400px;display:flex;flex-direction:column;gap:16px;align-items:center;'});
 
   // selector de los dos jugadores a comparar (mismo orden/formato que el
   // picker del modo individual, independiente del jugador único de ahí)
@@ -293,7 +293,7 @@ export function renderCompareView(){
   wheelsRow.appendChild(buildCompareCard(rowB, 'b', 'var(--blue)'));
   wrap.appendChild(wheelsRow);
 
-  const pdfBtn = el('div', {class:'no-print', style:'display:flex;justify-content:flex-end;width:100%;max-width:1220px;'}, [
+  const pdfBtn = el('div', {class:'no-print', style:'display:flex;justify-content:flex-end;width:100%;max-width:1400px;'}, [
     el('button', {id:'cmp-pdf-btn', class:'btn btn-gold', text:'Descargar PDF', onclick: exportComparePDF}),
   ]);
   wrap.appendChild(pdfBtn);
@@ -331,7 +331,7 @@ function buildCompareCard(row, suffix, accentColor){
   card.appendChild(headerRow);
   card.appendChild(el('div', {style:`height:1px;background:linear-gradient(90deg, ${accentColor}, transparent);margin:0 4px 8px;`}));
 
-  const svgWrap = el('div', {style:'width:100%;aspect-ratio:1/1;max-width:480px;margin:0 auto;position:relative;'});
+  const svgWrap = el('div', {style:'width:100%;aspect-ratio:1/1;max-width:600px;margin:0 auto;position:relative;'});
   const tooltipEl = el('div', {id:'wheel-tooltip'});
   const svg = renderWheelSVG(tooltipEl, row, false);
   svg.setAttribute('id', 'wheel-svg-' + suffix);
@@ -347,7 +347,7 @@ function buildCompareCard(row, suffix, accentColor){
    grupo de referencia, con el que gana esa métrica resaltado. */
 function renderCompareTable(rowA, rowB){
   const group = groupRows();
-  const box = el('div', {style:'background:var(--panel-2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;width:100%;max-width:1220px;'});
+  const box = el('div', {style:'background:var(--panel-2);border:1px solid var(--border);border-radius:14px;padding:18px 20px;width:100%;max-width:1400px;'});
   box.appendChild(el('div', {text:'Comparación métrica por métrica', style:'font-family:var(--font-display);font-size:14.5px;font-weight:700;color:var(--ink);margin-bottom:12px;'}));
 
   box.appendChild(el('div', {style:'display:grid;grid-template-columns:1fr 140px 140px;gap:10px;padding:0 4px 8px;border-bottom:1px solid var(--border);margin-bottom:6px;'}, [
