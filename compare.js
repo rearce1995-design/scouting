@@ -146,10 +146,10 @@ async function exportComparePDF(){
     drawWheelPage(imgB, rowB, 2);
     doc.addPage('a4', 'portrait');
 
-    /* ---- Página 3 (vertical): Resumen automático + comparación por
-       categorías — una lectura rápida antes del detalle métrica por
-       métrica de la página siguiente. ---- */
-    doc.addPage('a4', 'portrait');
+    /* ---- Página 3 (vertical): tabla comparativa completa, y debajo el
+       Resumen automático + comparación por categorías. Todo en una sola
+       página (o más si no entra) en vez de repartido en dos — la versión
+       anterior dejaba una página casi vacía arriba con solo el resumen. ---- */
     pageW = doc.internal.pageSize.getWidth();
     pageH = doc.internal.pageSize.getHeight();
     margin = 12;
@@ -157,58 +157,6 @@ async function exportComparePDF(){
     paintPageBg(pageW, pageH);
 
     const summary = computeComparisonSummary(rowA, rowB);
-    let sy = margin + 6;
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(230, 232, 239);
-    doc.text('Resumen', margin, sy);
-    sy += 8;
-
-    doc.setFont('helvetica', 'normal');
-    doc.setFontSize(10);
-    doc.setTextColor(174, 182, 200);
-    buildSummaryLines(summary).forEach(line => {
-      const wrapped = doc.splitTextToSize('•  ' + line, usableW - 2);
-      wrapped.forEach((wLine, i) => {
-        doc.text(wLine, margin + (i === 0 ? 0 : 4), sy);
-        sy += 5.2;
-      });
-      sy += 1.5;
-    });
-
-    sy += 6;
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(13);
-    doc.setTextColor(230, 232, 239);
-    doc.text('Comparación por categorías', margin, sy);
-    sy += 9;
-
-    summary.catWinners.forEach(c => {
-      const winnerName = c.winner === 'A' ? summary.nameA : c.winner === 'B' ? summary.nameB : 'Empate';
-      const rgb = c.winner === 'A' ? [201,163,83] : c.winner === 'B' ? [91,133,214] : [139,143,156];
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9.5);
-      doc.setTextColor(174, 182, 200);
-      doc.text(c.name, margin, sy);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(rgb[0], rgb[1], rgb[2]);
-      doc.text(winnerName, margin + usableW, sy, { align:'right' });
-      sy += 4;
-      doc.setDrawColor(38, 43, 54);
-      doc.line(margin, sy - 2, margin + usableW, sy - 2);
-      sy += 3.5;
-    });
-
-    /* ---- Página 4 (vertical): la tabla comparativa completa, con su
-       propio encabezado. ---- */
-    doc.addPage('a4', 'portrait');
-    pageW = doc.internal.pageSize.getWidth();
-    pageH = doc.internal.pageSize.getHeight();
-    margin = 12;
-    usableW = pageW - margin * 2;
-    paintPageBg(pageW, pageH);
-
     const group = groupRows();
     const colW = [usableW * 0.5, usableW * 0.25, usableW * 0.25];
     const col2X = margin + colW[0];
@@ -221,6 +169,15 @@ async function exportComparePDF(){
         paintPageBg(pageW, pageH);
         y = margin;
       }
+    };
+
+    // Dibuja un puntito dorado sólido antes del valor ganador — un círculo
+    // vectorial de verdad (doc.circle), no un carácter "●": los fonts
+    // estándar de jsPDF no tienen ese glifo y lo mostraban como "%Ï".
+    const drawWinnerDot = (text, centerX) => {
+      const tw = doc.getTextWidth(text);
+      doc.setFillColor(201, 163, 83);
+      doc.circle(centerX - tw / 2 - 2.4, y - 1.3, 0.7, 'F');
     };
 
     doc.setFont('helvetica', 'bold');
@@ -270,18 +227,68 @@ async function exportComparePDF(){
         if(aWins){ doc.setFillColor(35, 30, 15); doc.setLineWidth(0.35); doc.rect(col2X, y - 3.5, colW[1], 5, 'FD'); }
         if(bWins){ doc.setFillColor(35, 30, 15); doc.setLineWidth(0.35); doc.rect(col3X, y - 3.5, colW[2], 5, 'FD'); }
 
-        const textA = `${aWins ? '● ' : ''}${fmtVal(valA)}${pctA !== null ? ` · ${ordinal(pctA)}` : ''}`;
-        const textB = `${bWins ? '● ' : ''}${fmtVal(valB)}${pctB !== null ? ` · ${ordinal(pctB)}` : ''}`;
+        const textA = `${fmtVal(valA)}${pctA !== null ? ` · ${ordinal(pctA)}` : ''}`;
+        const textB = `${fmtVal(valB)}${pctB !== null ? ` · ${ordinal(pctB)}` : ''}`;
         doc.setFont('helvetica', aWins ? 'bold' : 'normal');
         doc.setTextColor(aWins ? 201 : 174, aWins ? 163 : 182, aWins ? 83 : 200);
         doc.text(textA, col2X + colW[1] / 2, y, { align:'center' });
+        if(aWins) drawWinnerDot(textA, col2X + colW[1] / 2);
         doc.setFont('helvetica', bWins ? 'bold' : 'normal');
         doc.setTextColor(bWins ? 201 : 174, bWins ? 163 : 182, bWins ? 83 : 200);
         doc.text(textB, col3X + colW[2] / 2, y, { align:'center' });
+        if(bWins) drawWinnerDot(textB, col3X + colW[2] / 2);
 
         y += 5.5;
       });
       y += 2.5;
+    });
+
+    // ---- Resumen automático, debajo de la tabla ----
+    y += 4;
+    ensureSpace(14);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(230, 232, 239);
+    doc.text('Resumen', margin, y);
+    y += 8;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(174, 182, 200);
+    buildSummaryLines(summary).forEach(line => {
+      const wrapped = doc.splitTextToSize('•  ' + line, usableW - 2);
+      ensureSpace(wrapped.length * 5.2 + 1.5);
+      wrapped.forEach((wLine, i) => {
+        doc.text(wLine, margin + (i === 0 ? 0 : 4), y);
+        y += 5.2;
+      });
+      y += 1.5;
+    });
+
+    // ---- Comparación por categorías, debajo del resumen ----
+    y += 4;
+    ensureSpace(13);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(230, 232, 239);
+    doc.text('Comparación por categorías', margin, y);
+    y += 9;
+
+    summary.catWinners.forEach(c => {
+      ensureSpace(7.5);
+      const winnerName = c.winner === 'A' ? summary.nameA : c.winner === 'B' ? summary.nameB : 'Empate';
+      const rgb = c.winner === 'A' ? [201,163,83] : c.winner === 'B' ? [91,133,214] : [139,143,156];
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(174, 182, 200);
+      doc.text(c.name, margin, y);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(rgb[0], rgb[1], rgb[2]);
+      doc.text(winnerName, margin + usableW, y, { align:'right' });
+      y += 4;
+      doc.setDrawColor(38, 43, 54);
+      doc.line(margin, y - 2, margin + usableW, y - 2);
+      y += 3.5;
     });
 
     const fileName = `comparacion_${titleForRow(rowA)}_vs_${titleForRow(rowB)}.pdf`
