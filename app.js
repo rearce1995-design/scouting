@@ -510,6 +510,33 @@ function applyPreset(preset, includePhysical){
 }
 
 /* ---- ventana modal para elegir métricas (checklist clickeable) ---- */
+/* Clasificador de columnas para las pestañas del selector de métricas
+   (paso 3). No depende de un catálogo fijo — funciona por palabras clave
+   sobre el nombre de columna tal cual viene en el Excel del usuario, así
+   que agrupa igual de bien un export estándar de Wyscout que uno con
+   columnas reordenadas o renombradas parcialmente. Reglas en orden de
+   prioridad: la primera que matchea gana (por eso "offensive duels" va
+   antes que el genérico "duels", etc.). */
+const METRIC_CATEGORY_RULES = [
+  { cat:'Portero', kws:['conceded goal','shots against','clean sheet','save rate','xg against','prevented goal','back passes received','exit','goalkeeper','gk '] },
+  { cat:'Balón parado', kws:['free kick','corner','penalties taken','penalty conversion'] },
+  { cat:'Físico', kws:['distance','speed','acceleration','deceleration','meter/min','sprint','hsr','high intensity',' hi '] },
+  { cat:'Pases clave', kws:['xa','shot assist','second assist','third assist','smart pass','key pass','final third','penalty area','through pass','deep completion','deep completed'] },
+  { cat:'Pases', kws:['pass','cross','progressive pass'] },
+  { cat:'Defensivo', kws:['defensive','aerial duel','sliding tackle','block','intercept','fouls per','yellow card','red card'] },
+  { cat:'Ataque', kws:['goal','xg','shot','dribble','offensive duel','touches in box','progressive run','assist','fouls suffered','attacking'] },
+];
+function classifyMetricColumn(colName){
+  const c = String(colName || '').toLowerCase();
+  for(const rule of METRIC_CATEGORY_RULES){
+    if(rule.kws.some(k => c.includes(k))) return rule.cat;
+  }
+  return 'General';
+}
+/* Orden fijo de pestañas (solo se muestran las que tengan al menos una
+   columna presente en la tabla cargada). */
+const METRIC_CATEGORY_ORDER = ['Defensivo', 'Ataque', 'Pases', 'Pases clave', 'Portero', 'Balón parado', 'Físico', 'General'];
+
 function openMetricModal(cat){
   const existing = document.getElementById('metric-modal-backdrop');
   if(existing) existing.remove();
@@ -533,12 +560,44 @@ function openMetricModal(cat){
   ]);
 
   const search = el('input', {type:'text', placeholder:'Buscar estadística (ej: pases, duelos, goles...)', class:'modal-search'});
+
+  // pestañas de categoría — solo las que tengan al menos una columna presente
+  const colsByCat = new Map();
+  state.numericCols.forEach(h => {
+    const c = classifyMetricColumn(h);
+    if(!colsByCat.has(c)) colsByCat.set(c, []);
+    colsByCat.get(c).push(h);
+  });
+  const availableCats = METRIC_CATEGORY_ORDER.filter(c => colsByCat.has(c));
+  let activeCat = 'Todas';
+  const tabsRow = el('div', {style:'display:flex;gap:6px;flex-wrap:wrap;margin:12px 20px 0;'});
   const grid = el('div', {class:'modal-grid'});
+
+  function renderTabs(){
+    tabsRow.innerHTML = '';
+    const tabBtn = (key, label, count) => {
+      const isActive = activeCat === key;
+      const btn = el('button', {
+        type:'button', class:'btn-sm',
+        text: count !== undefined ? `${label} (${count})` : label,
+        style:`border-radius:16px;padding:5px 12px;font-size:11px;font-weight:700;cursor:pointer;
+               background:${isActive ? 'var(--gold-soft)' : 'transparent'};
+               border:1px solid ${isActive ? 'var(--gold)' : 'var(--border)'};
+               color:${isActive ? 'var(--gold)' : 'var(--ink-dim)'};`,
+        onclick: () => { activeCat = key; renderTabs(); renderGrid(search.value); }
+      });
+      return btn;
+    };
+    tabsRow.appendChild(tabBtn('Todas', 'Todas', state.numericCols.length));
+    availableCats.forEach(c => tabsRow.appendChild(tabBtn(c, c, colsByCat.get(c).length)));
+  }
+  renderTabs();
 
   function renderGrid(filter){
     grid.innerHTML = '';
     const f = (filter||'').toLowerCase();
-    const cols = state.numericCols.filter(h => h.toLowerCase().includes(f));
+    const base = activeCat === 'Todas' ? state.numericCols : (colsByCat.get(activeCat) || []);
+    const cols = base.filter(h => h.toLowerCase().includes(f));
     if(!cols.length){ grid.appendChild(el('div', {class:'dd-empty', text:'Sin resultados para esa búsqueda.'})); return; }
     cols.forEach(h => {
       const card = el('div', {class:'modal-item' + (selected.has(h) ? ' sel' : '')}, [
@@ -572,6 +631,7 @@ function openMetricModal(cat){
   ]);
 
   panel.appendChild(header);
+  panel.appendChild(tabsRow);
   panel.appendChild(search);
   panel.appendChild(grid);
   panel.appendChild(footer);

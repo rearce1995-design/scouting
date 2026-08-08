@@ -29,7 +29,7 @@ export const COUNTRY_FIFA = {
   norway:'NOR', noruega:'NOR', finland:'FIN', finlandia:'FIN', iceland:'ISL', islandia:'ISL',
   poland:'POL', polonia:'POL', 'czech republic':'CZE', czechia:'CZE', 'república checa':'CZE',
   slovakia:'SVK', eslovaquia:'SVK', hungary:'HUN', hungría:'HUN', romania:'ROU', rumania:'ROU',
-  bulgaria:'BUL', greece:'GRE', grecia:'GRE', turkey:'TUR', turkiye:'TUR', 'türkiye':'TUR', 'turquía':'TUR',
+  bulgaria:'BUL', greece:'GRE', grecia:'GRE', turkey:'TUR', 'turquía':'TUR',
   ukraine:'UKR', ucrania:'UKR', russia:'RUS', rusia:'RUS', belarus:'BLR', bielorrusia:'BLR',
   croatia:'CRO', croacia:'CRO', serbia:'SRB', slovenia:'SVN', eslovenia:'SVN',
   'bosnia and herzegovina':'BIH', 'bosnia y herzegovina':'BIH', montenegro:'MNE',
@@ -123,7 +123,6 @@ export const COUNTRY_FIFA = {
 export function normalizeCountryName(raw){
   return String(raw || '')
     .trim().toLowerCase()
-    .replace(/[‘’‛`´]/g, "'")
     .normalize('NFD').replace(/[\u0300-\u036f]/g, ''); // saca acentos para matchear
 }
 
