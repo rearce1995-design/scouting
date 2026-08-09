@@ -1,6 +1,7 @@
 import { PRESETS, A, PHYS, M, C, withDiscipline, disciplineCat } from './presets.js';
 import { countryToFifaCode, flagCdnUrl, normalizeCountryName } from './flags.js';
 import { renderModeTabs, renderCompareView } from './compare.js';
+import { renderProfileView } from './profile.js';
 
 /* =========================================================================
    RUEDA DE PERCENTILES — constructor de gráficos tipo "percentile wheel"
@@ -78,8 +79,10 @@ const state = {
   },
   presetUI: { position: '', role: '', includePhysical: false },
   activeRanking: null, // { catName, label, col, invert }
-  viewMode: 'single', // 'single' | 'compare'
+  viewMode: 'single', // 'single' | 'compare' | 'profile'
   compare: { rowA: null, rowB: null },
+  profile: { weights: {} }, // weights[catName] = 0-100
+  profileExpanded: null,    // fila del jugador con el desglose abierto en el ranking de perfil
 };
 
 let catSeq = 0, metSeq = 0;
@@ -1235,6 +1238,13 @@ function renderMain(){
     return;
   }
 
+  if(state.viewMode === 'profile' && hasMetrics){
+    frag.appendChild(renderProfileView());
+    main.innerHTML = '';
+    main.appendChild(frag);
+    return;
+  }
+
   if(!state.selectedRow || !hasMetrics){
     const empty = el('div', {id:'empty-state'}, []);
     empty.innerHTML = '<b>Casi listo</b><br>Elegí un jugador (paso 4) y al menos una métrica (paso 3), después tocá <b>Generar gráfico</b>.';
@@ -1741,5 +1751,6 @@ document.addEventListener('DOMContentLoaded', refreshAll);
 // estas piezas en vez de reimplementarlas.
 export {
   state, el, opt, sortedRowsForPicker, playerLabel, titleForRow, resolveCountryName,
-  groupRows, numVal, computePercentile, fmtVal, renderWheelSVG, renderMain, ordinal,
+  groupRows, numVal, computePercentile, fmtVal, renderWheelSVG, renderMain, ordinal, bucketColor,
+  applyPreset,
 };

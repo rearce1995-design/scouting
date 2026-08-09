@@ -446,6 +446,7 @@ export function renderModeTabs(){
   });
   wrap.appendChild(tab('single', 'Rueda individual'));
   wrap.appendChild(tab('compare', 'Comparación'));
+  wrap.appendChild(tab('profile', 'Perfil objetivo'));
   return wrap;
 }
 
