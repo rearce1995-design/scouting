@@ -81,7 +81,7 @@ const state = {
   activeRanking: null, // { catName, label, col, invert }
   viewMode: 'single', // 'single' | 'compare' | 'profile'
   compare: { rowA: null, rowB: null },
-  profile: { weights: {} }, // weights[catName] = 0-100
+  profile: { weights: {}, lastCategorySignature: null }, // weights[catName] = 0-100, suman <=100 entre todas
   profileExpanded: null,    // fila del jugador con el desglose abierto en el ranking de perfil
 };
 

@@ -125,8 +125,41 @@ function profileCategories(){
 }
 
 function getWeight(catName){
-  if(state.profile.weights[catName] === undefined) state.profile.weights[catName] = 50;
-  return state.profile.weights[catName];
+  return state.profile.weights[catName] ?? 0;
+}
+
+/* Firma del conjunto de categorías actual (nombres en orden) — se usa
+   para saber si hay que recalcular los pesos por default o si el usuario
+   ya los tiene seteados (a mano o por un preset anterior) y no hay que
+   pisarlos. */
+function categorySignature(categories){
+  return categories.map(c => c.name).join('|');
+}
+
+/* Pesos por default cuando se entra a esta pestaña por primera vez con
+   un conjunto de categorías nuevo (recién cargado el preset, por ejemplo):
+   la primera categoría del preset (que suele ser la identidad principal
+   del rol, ej. "Defensa y duelos" en un Central) pesa más, en una
+   progresión lineal descendente que suma EXACTO 100 entre todas. No es
+   una ciencia exacta — es una heurística razonable de arranque; el
+   usuario la termina de ajustar con los sliders. */
+function ensureDefaultWeights(categories){
+  const sig = categorySignature(categories);
+  if(state.profile.lastCategorySignature === sig) return; // ya están seteados, no los tocamos
+  const n = categories.length;
+  const rawSum = (n * (n + 1)) / 2;
+  let assigned = 0;
+  categories.forEach((c, i) => {
+    let w;
+    if(i === n - 1){
+      w = 100 - assigned; // el último ajusta el resto para que la suma dé justo 100 (evita errores de redondeo)
+    }else{
+      w = Math.round((100 * (n - i)) / rawSum);
+      assigned += w;
+    }
+    state.profile.weights[c.name] = w;
+  });
+  state.profile.lastCategorySignature = sig;
 }
 
 /* Promedio de percentiles de las métricas de una categoría, para un
@@ -211,15 +244,29 @@ export function renderProfileView(){
     if(e.target.value === '') return;
     const preset = realPresets[parseInt(e.target.value, 10)];
     state.profileExpanded = null;
-    applyPreset(preset, state.presetUI.includePhysical); // ya re-renderiza todo internamente; categorías nuevas arrancan en 50% por default (ver getWeight)
+    state.profile.lastCategorySignature = null; // fuerza a recalcular defaults para las categorías del nuevo preset
+    applyPreset(preset, state.presetUI.includePhysical); // ya re-renderiza todo internamente
   });
   presetBox.appendChild(presetSelect);
   wrap.appendChild(presetBox);
 
-  /* ---- Panel de pesos: un slider por categoría ---- */
+  ensureDefaultWeights(categories);
+
+  /* ---- Panel de pesos: un slider por categoría, con tope duro de 100%
+     entre todas — no se puede pasar, así los números siempre significan
+     lo mismo (una porción de un total fijo) en vez de números sueltos sin
+     relación entre sí. ---- */
   const weightsBox = el('div', {style:'background:var(--panel-2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;width:100%;'});
   weightsBox.appendChild(el('div', {text:'Perfil objetivo — prioridades', style:'font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;'}));
-  weightsBox.appendChild(el('div', {text:'Definí cuánto pesa cada categoría en el ajuste (0 = no importa, 100 = máxima prioridad). El ranking se recalcula al soltar el control.', style:'font-size:11px;color:var(--ink-faint);margin-bottom:14px;line-height:1.5;'}));
+  weightsBox.appendChild(el('div', {text:'Definí cuánto pesa cada categoría en el ajuste. Entre todas no pueden sumar más de 100%. El ranking se recalcula al soltar el control.', style:'font-size:11px;color:var(--ink-faint);margin-bottom:6px;line-height:1.5;'}));
+  const totalLabel = el('div', {style:'font-size:11px;font-weight:700;margin-bottom:14px;font-family:var(--font-mono);'});
+  function updateTotalLabel(){
+    const sum = categories.reduce((a, c) => a + getWeight(c.name), 0);
+    totalLabel.textContent = `Total asignado: ${sum}% / 100%`;
+    totalLabel.style.color = sum >= 100 ? 'var(--green)' : 'var(--ink-faint)';
+  }
+  updateTotalLabel();
+  weightsBox.appendChild(totalLabel);
 
   const slidersGrid = el('div', {style:'display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:16px 20px;'});
   categories.forEach(cat => {
@@ -231,12 +278,19 @@ export function renderProfileView(){
     ]);
     const slider = el('input', {type:'range', min:'0', max:'100', value:String(w), style:'width:100%;accent-color:#B6935C;cursor:pointer;'});
     slider.addEventListener('input', (e) => {
-      valSpan.textContent = e.target.value + '%'; // feedback instantáneo mientras arrastra
+      // tope duro: no se puede pisar por encima de lo que dejan libre las
+      // demás categorías — se calcula en vivo, así que da igual el orden
+      // en que se muevan los sliders.
+      const otherSum = categories.reduce((a, c) => c.name === cat.name ? a : a + getWeight(c.name), 0);
+      const cap = 100 - otherSum;
+      let nv = parseInt(e.target.value, 10);
+      if(nv > cap) nv = cap;
+      e.target.value = String(nv); // si se pasó, el control "rebota" al máximo disponible
+      state.profile.weights[cat.name] = nv;
+      valSpan.textContent = nv + '%';
+      updateTotalLabel();
     });
-    slider.addEventListener('change', (e) => {
-      state.profile.weights[cat.name] = parseInt(e.target.value, 10); // recién acá se guarda y se recalcula todo
-      renderMain();
-    });
+    slider.addEventListener('change', () => { renderMain(); }); // recién acá se recalcula el ranking completo
     slidersGrid.appendChild(el('div', {}, [labelRow, slider]));
   });
   weightsBox.appendChild(slidersGrid);
