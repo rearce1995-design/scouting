@@ -85,7 +85,7 @@ const state = {
   compare: { rowA: null, rowB: null },
   profile: { weights: {}, lastCategorySignature: null }, // weights[catName] = 0-100, suman <=100 entre todas
   profileExpanded: null,    // fila del jugador con el desglose abierto en el ranking de perfil
-  profileFilters: { priority:'', age:'', minutes:'', club:'', foot:'', nationality:'', shortlisted:'' },
+  profileFilters: { priority:'', ageMin:'', ageMax:'', minutesMin:'', minutesMax:'', club:'', foot:'', nationality:'', shortlisted:'' },
   profileColumns: { age:true, minutes:true, club:true, foot:false, nationality:false, shortlisted:true },
 };
 

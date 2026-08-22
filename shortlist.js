@@ -15,6 +15,17 @@ function fmtDate(iso){
 function stateColor(status){
   return ({'Pendiente':'var(--amber)', 'Ver video':'var(--blue)', 'Evaluado':'var(--gold)', 'Recomendado':'var(--green)', 'Descartado':'var(--red)'})[status] || 'var(--ink-dim)';
 }
+function sortByFit(items){
+  return [...items].sort((a, b) => {
+    const fitValue = item => (item.fit === null || item.fit === undefined || item.fit === '')
+      ? -Infinity : (Number.isFinite(Number(item.fit)) ? Number(item.fit) : -Infinity);
+    const fitA = fitValue(a);
+    const fitB = fitValue(b);
+    if(fitB !== fitA) return fitB - fitA;
+    // Con el mismo Fit, la actualización más reciente queda primero.
+    return String(b.updatedAt || b.addedAt).localeCompare(String(a.updatedAt || a.addedAt));
+  });
+}
 function findRow(item){
   return state.rows.find(r => {
     const name = state.playerCol ? String(r[state.playerCol] ?? '').trim() : '';
@@ -29,8 +40,7 @@ function exportShortlistToExcel(){
     alert('No se pudo cargar la herramienta de exportación. Revisá tu conexión e intentá de nuevo.');
     return;
   }
-  const rows = loadShortlist()
-    .sort((a,b) => String(b.updatedAt || b.addedAt).localeCompare(String(a.updatedAt || a.addedAt)))
+  const rows = sortByFit(loadShortlist())
     .map(item => ({
       Jugador: item.name || '',
       Club: item.team || '',
@@ -62,10 +72,10 @@ function exportShortlistToExcel(){
 
 export function renderShortlistView(){
   const wrap = el('div', {class:'fade-in', style:'width:100%;max-width:1400px;display:flex;flex-direction:column;gap:10px;'});
-  const items = loadShortlist().sort((a,b) => String(b.updatedAt || b.addedAt).localeCompare(String(a.updatedAt || a.addedAt)));
+  const items = sortByFit(loadShortlist());
   wrap.appendChild(el('div', {style:'background:var(--panel-2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;'}, [
     el('div', {text:`Seguimiento (${items.length})`, style:'font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--ink);'}),
-    el('div', {text:'Decisiones, video y observaciones guardadas en este navegador.', style:'font-size:11px;color:var(--ink-faint);margin-top:4px;'}),
+    el('div', {text:'Decisiones, video y observaciones guardadas en este navegador · ordenadas por Fit.', style:'font-size:11px;color:var(--ink-faint);margin-top:4px;'}),
   ]));
   if(!items.length){
     wrap.appendChild(el('div', {class:'helptext', text:'Todavía no hay jugadores en seguimiento. Podés añadirlos desde la rueda individual o desde el ranking de perfil.'}));
@@ -78,8 +88,7 @@ export function renderShortlistView(){
   const table = el('div', {style:'background:var(--panel-2);border:1px solid var(--border);border-radius:14px;padding:12px;overflow-x:auto;'});
   const renderTable = () => {
     table.innerHTML = '';
-    const filtered = loadShortlist()
-      .sort((a,b) => String(b.updatedAt || b.addedAt).localeCompare(String(a.updatedAt || a.addedAt)))
+    const filtered = sortByFit(loadShortlist())
       .filter(item => !statusFilter.value || item.status === statusFilter.value);
     const head = el('div', {style:'display:grid;grid-template-columns:minmax(180px,1.4fr) minmax(110px,.8fr) minmax(130px,1fr) 70px 95px 145px minmax(160px,1.2fr) 90px 34px;gap:9px;padding:0 8px 8px;min-width:1080px;border-bottom:1px solid var(--border);'},
       ['JUGADOR','CLUB','PERFIL','FIT','MINUTOS','ESTADO','NOTA','FECHA',''].map(t => el('span', {text:t, style:'font-size:9px;color:var(--ink-faint);letter-spacing:.4px;'})));

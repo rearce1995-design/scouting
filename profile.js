@@ -489,9 +489,66 @@ export function renderProfileView(){
     select.addEventListener('change', e => { filters[key] = e.target.value; renderMain(); });
     quick.appendChild(select);
   };
+
+  /* Rango con doble deslizador + entrada numérica. La previsualización se
+     actualiza mientras se arrastra y el ranking se recalcula sólo al soltar,
+     para que el control siga siendo ágil aun con universos grandes. */
+  const rangeFilter = (key, label, values, unit='') => {
+    const validValues = values.filter(v => typeof v === 'number' && isFinite(v));
+    if(!validValues.length) return;
+    const dataMin = Math.floor(Math.min(...validValues));
+    const dataMax = Math.ceil(Math.max(...validValues));
+    if(dataMin === dataMax) return;
+    const minKey = `${key}Min`, maxKey = `${key}Max`;
+    const storedMin = Number(filters[minKey]), storedMax = Number(filters[maxKey]);
+    let currentMin = Number.isFinite(storedMin) && filters[minKey] !== '' ? Math.max(dataMin, Math.min(dataMax, storedMin)) : dataMin;
+    let currentMax = Number.isFinite(storedMax) && filters[maxKey] !== '' ? Math.max(dataMin, Math.min(dataMax, storedMax)) : dataMax;
+    if(currentMin > currentMax) [currentMin, currentMax] = [currentMax, currentMin];
+
+    const minRange = el('input', {type:'range', min:dataMin, max:dataMax, step:1, value:currentMin, style:'flex:1;min-width:80px;accent-color:var(--gold);'});
+    const maxRange = el('input', {type:'range', min:dataMin, max:dataMax, step:1, value:currentMax, style:'flex:1;min-width:80px;accent-color:var(--gold);'});
+    const minInput = el('input', {type:'number', min:dataMin, max:dataMax, step:1, value:currentMin, title:`Mínimo de ${label}`, style:'width:68px;padding:6px 7px;font-size:11px;'});
+    const maxInput = el('input', {type:'number', min:dataMin, max:dataMax, step:1, value:currentMax, title:`Máximo de ${label}`, style:'width:68px;padding:6px 7px;font-size:11px;'});
+    const summary = el('span', {style:'font-family:var(--font-mono);font-size:10px;color:var(--gold);white-space:nowrap;'});
+
+    const sync = () => {
+      currentMin = Math.max(dataMin, Math.min(dataMax, Number(minRange.value)));
+      currentMax = Math.max(dataMin, Math.min(dataMax, Number(maxRange.value)));
+      if(currentMin > currentMax){
+        if(document.activeElement === minRange || document.activeElement === minInput) currentMax = currentMin;
+        else currentMin = currentMax;
+      }
+      minRange.value = currentMin; maxRange.value = currentMax;
+      minInput.value = currentMin; maxInput.value = currentMax;
+      summary.textContent = `${currentMin}${unit} — ${currentMax}${unit}`;
+    };
+    const commit = () => {
+      sync();
+      filters[minKey] = currentMin === dataMin ? '' : currentMin;
+      filters[maxKey] = currentMax === dataMax ? '' : currentMax;
+      renderMain();
+    };
+    [minRange, maxRange].forEach(control => {
+      control.addEventListener('input', sync);
+      control.addEventListener('change', commit);
+    });
+    minInput.addEventListener('change', () => { minRange.value = minInput.value || dataMin; commit(); });
+    maxInput.addEventListener('change', () => { maxRange.value = maxInput.value || dataMax; commit(); });
+    sync();
+
+    const reset = el('button', {class:'btn btn-sm', text:'Restablecer', style:'font-size:10px;padding:5px 7px;', onclick:()=>{
+      filters[minKey] = ''; filters[maxKey] = ''; renderMain();
+    }});
+    quick.appendChild(el('div', {style:'min-width:280px;flex:1 1 410px;max-width:480px;padding:8px 9px;border:1px solid var(--border);border-radius:8px;background:#0D1220;'}, [
+      el('div', {style:'display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px;'}, [
+        el('span', {text:label, style:'font-size:10.5px;color:var(--ink-dim);font-weight:700;'}), summary,
+      ]),
+      el('div', {style:'display:flex;align-items:center;gap:6px;flex-wrap:wrap;'}, [minInput, minRange, maxRange, maxInput, reset]),
+    ]));
+  };
   quickSelect('priority', 'Prioridad', [{value:'alta',label:'Sólo prioridad alta'},{value:'media',label:'Prioridad media'},{value:'baja',label:'Prioridad baja'},{value:'revisar',label:'Revisar'}]);
-  quickSelect('age', 'Edad', [{value:'u23',label:'≤ 23 años'},{value:'u28',label:'≤ 28 años'},{value:'o28',label:'> 28 años'}]);
-  quickSelect('minutes', 'Minutos', [{value:'900',label:'≥ 900 min'},{value:'1800',label:'≥ 1.800 min'},{value:'low',label:'< 900 min'}]);
+  rangeFilter('age', 'Edad', rows.map(r => r.age), ' años');
+  rangeFilter('minutes', 'Minutos', rows.map(r => r.minutes), ' min');
   const clubs = [...new Set(rows.map(r=>r.team).filter(Boolean))].sort();
   if(clubs.length) quickSelect('club', 'Club', clubs.map(v=>({value:v,label:v})));
   const feet = [...new Set(rows.map(r=>r.foot).filter(Boolean))].sort();
@@ -510,12 +567,10 @@ export function renderProfileView(){
   listBox.appendChild(columnPicker);
   const shownRows = rows.filter(r => {
     if(filters.priority && r.priority.key !== filters.priority) return false;
-    if(filters.age==='u23' && !(r.age <= 23)) return false;
-    if(filters.age==='u28' && !(r.age <= 28)) return false;
-    if(filters.age==='o28' && !(r.age > 28)) return false;
-    if(filters.minutes==='900' && !(r.minutes >= 900)) return false;
-    if(filters.minutes==='1800' && !(r.minutes >= 1800)) return false;
-    if(filters.minutes==='low' && !(r.minutes < 900)) return false;
+    if(filters.ageMin !== '' && !(r.age >= Number(filters.ageMin))) return false;
+    if(filters.ageMax !== '' && !(r.age <= Number(filters.ageMax))) return false;
+    if(filters.minutesMin !== '' && !(r.minutes >= Number(filters.minutesMin))) return false;
+    if(filters.minutesMax !== '' && !(r.minutes <= Number(filters.minutesMax))) return false;
     if(filters.club && r.team !== filters.club) return false;
     if(filters.foot && r.foot !== filters.foot) return false;
     if(filters.nationality && r.nationality !== filters.nationality) return false;
