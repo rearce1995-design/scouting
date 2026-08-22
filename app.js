@@ -2,6 +2,7 @@ import { PRESETS, A, PHYS, M, C, withDiscipline, disciplineCat } from './presets
 import { countryToFifaCode, flagCdnUrl, normalizeCountryName } from './flags.js';
 import { renderModeTabs, renderCompareView } from './compare.js';
 import { renderProfileView } from './profile.js';
+import { renderShortlistView } from './shortlist.js';
 
 /* =========================================================================
    RUEDA DE PERCENTILES — constructor de gráficos tipo "percentile wheel"
@@ -65,6 +66,7 @@ const state = {
   teamCol: null,
   posCol: null,
   minutesCol: null,
+  footCol: null,
   ageCol: null,
   nationCol: null,
   passportCol: null,
@@ -79,11 +81,15 @@ const state = {
   },
   presetUI: { position: '', role: '', includePhysical: false },
   activeRanking: null, // { catName, label, col, invert }
-  viewMode: 'single', // 'single' | 'compare' | 'profile'
+  viewMode: 'single', // 'single' | 'compare' | 'profile' | 'shortlist'
   compare: { rowA: null, rowB: null },
   profile: { weights: {}, lastCategorySignature: null }, // weights[catName] = 0-100, suman <=100 entre todas
   profileExpanded: null,    // fila del jugador con el desglose abierto en el ranking de perfil
+  profileFilters: { priority:'', age:'', minutes:'', club:'', foot:'', nationality:'', shortlisted:'' },
+  profileColumns: { age:true, minutes:true, club:true, foot:false, nationality:false, shortlisted:true },
 };
+
+const SHORTLIST_STORAGE_KEY = 'ruedaPercentiles_shortlist_v1';
 
 let catSeq = 0, metSeq = 0;
 const uid = (p) => p + '_' + (Date.now().toString(36)) + Math.random().toString(36).slice(2,7);
@@ -178,12 +184,29 @@ async function ingestRows(json){
   state.numericCols = state.headers.filter(h => counts[h].nonEmpty > 0 && (counts[h].numeric / counts[h].nonEmpty) >= 0.7);
 
   // heurísticas de auto-detección
-  const findCol = (candidates) => state.headers.find(h => candidates.some(c => h.toLowerCase().trim() === c)) ||
-                                   state.headers.find(h => candidates.some(c => h.toLowerCase().includes(c)));
+  // Se respeta el orden de preferencia de `candidates` (por ejemplo,
+  // "Team within selected timeframe" antes que "Team"). Antes se recorrían
+  // las columnas primero, de modo que una coincidencia temprana anulaba la
+  // prioridad declarada de los candidatos.
+  const findCol = (candidates) => {
+    for(const candidate of candidates){
+      const hit = state.headers.find(h => h.toLowerCase().trim() === candidate);
+      if(hit) return hit;
+    }
+    for(const candidate of candidates){
+      const hit = state.headers.find(h => h.toLowerCase().includes(candidate));
+      if(hit) return hit;
+    }
+    return undefined;
+  };
   state.playerCol = findCol(['player','jugador','name','nombre']) || state.playerCol;
-  state.teamCol = findCol(['team','equipo','club']) || state.teamCol;
+  // En exportaciones Wyscout el campo "Team" puede quedar vacío para
+  // jugadores de reserva, mientras que "Team within selected timeframe"
+  // conserva el club observado. Priorizamos ese campo cuando está presente.
+  state.teamCol = findCol(['team within selected timeframe', 'team','equipo','club']) || state.teamCol;
   state.posCol = findCol(['position','posición','posicion','pos']) || state.posCol;
   state.minutesCol = findCol(['minutes played','minutos','minutes','mins']) || state.minutesCol;
+  state.footCol = findCol(['foot', 'preferred foot', 'pie', 'pierna hábil', 'pierna habil']) || state.footCol;
   state.ageCol = findCol(['age','edad']) || state.ageCol;
   state.birthCol = findCol(['birth country', 'país de nacimiento']) || state.birthCol;
   state.passportCol = findCol(['passport country', 'nationality', 'nacionalidad']) || state.passportCol;
@@ -214,6 +237,83 @@ function groupRows(){
     const fn = OPS[f.op] || OPS['='];
     try{ return fn(r[f.col], f.val); }catch(e){ return true; }
   }));
+}
+
+function comparisonContextLabel(){
+  const count = groupRows().length;
+  const parts = [`${count} jugadores`];
+  const positionFilter = state.filters.find(f => f.col && (f.col === state.posCol || /position|posici[oó]n|\bpos\b/i.test(f.col)) && f.val);
+  if(positionFilter) parts.push(String(positionFilter.val));
+  const competition = [state.meta.competition, state.meta.season].filter(Boolean).join(' ');
+  if(competition) parts.push(competition);
+  state.filters.filter(f => f.col && f.val && f !== positionFilter).forEach(f => {
+    const short = f.col === state.minutesCol ? 'min' : f.col === state.ageCol ? 'edad' : f.col;
+    parts.push(`${short} ${f.op || '='} ${f.val}`);
+  });
+  return parts.join(' · ');
+}
+
+function shortlistKey(row){
+  if(!row) return '';
+  return [state.playerCol ? row[state.playerCol] : '', state.teamCol ? row[state.teamCol] : '', state.ageCol ? row[state.ageCol] : '']
+    .map(v => String(v ?? '').trim().toLowerCase()).join('|');
+}
+function loadShortlist(){
+  try{
+    const value = JSON.parse(localStorage.getItem(SHORTLIST_STORAGE_KEY) || '[]');
+    return Array.isArray(value) ? value : [];
+  }catch(e){ return []; }
+}
+function saveShortlist(items){
+  try{ localStorage.setItem(SHORTLIST_STORAGE_KEY, JSON.stringify(items)); return true; }
+  catch(e){ alert('No se pudo guardar el seguimiento en este navegador.'); return false; }
+}
+function isShortlisted(row){ return loadShortlist().some(item => item.key === shortlistKey(row)); }
+function getShortlistItem(row){ return loadShortlist().find(item => item.key === shortlistKey(row)) || null; }
+function upsertShortlist(row, snapshot={}){
+  const key = shortlistKey(row);
+  if(!key) return null;
+  const items = loadShortlist();
+  const idx = items.findIndex(item => item.key === key);
+  const existing = idx >= 0 ? items[idx] : {};
+  const next = {
+    ...existing, ...snapshot, key,
+    name: state.playerCol ? String(row[state.playerCol] ?? '') : 'Jugador',
+    team: state.teamCol ? String(row[state.teamCol] ?? '') : '',
+    age: state.ageCol ? numVal(row, state.ageCol) : null,
+    minutes: state.minutesCol ? numVal(row, state.minutesCol) : null,
+    foot: state.footCol ? String(row[state.footCol] ?? '') : '',
+    nationality: resolveCountryName(row),
+    addedAt: existing.addedAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    status: snapshot.status || existing.status || 'Pendiente', note: snapshot.note ?? existing.note ?? '', evaluator: snapshot.evaluator ?? existing.evaluator ?? '',
+    conclusion: snapshot.conclusion ?? existing.conclusion ?? '',
+    evaluationDate: snapshot.evaluationDate ?? existing.evaluationDate ?? '',
+    videoChecks: snapshot.videoChecks ?? existing.videoChecks ?? {},
+  };
+  if(idx >= 0) items[idx] = next; else items.unshift(next);
+  saveShortlist(items);
+  return next;
+}
+function updateShortlistItem(key, changes){
+  const items = loadShortlist();
+  const idx = items.findIndex(item => item.key === key);
+  if(idx < 0) return null;
+  items[idx] = { ...items[idx], ...changes, updatedAt:new Date().toISOString() };
+  saveShortlist(items);
+  return items[idx];
+}
+function removeShortlistItem(key){ saveShortlist(loadShortlist().filter(item => item.key !== key)); }
+
+function selectPlayerForWheel(row){
+  state.selectedRow = row;
+  state.meta.selectedNationality = '';
+  state.meta.displayName = state.playerCol ? String(row[state.playerCol] || '') : '';
+  if(state.teamCol) state.meta.club = String(row[state.teamCol] || '');
+  state.meta.age = state.ageCol ? String(row[state.ageCol] ?? '').trim() : '';
+  state.viewMode = 'single';
+  state.activeRanking = null;
+  refreshAll();
 }
 
 /* ---------------------------- Percentiles ------------------------------- */
@@ -306,6 +406,7 @@ function el(tag, attrs={}, children=[]){
     else if(k === 'text') e.textContent = attrs[k];
     else if(k.startsWith('on') && typeof attrs[k] === 'function') e.addEventListener(k.slice(2), attrs[k]);
     else if(k === 'disabled'){ if(attrs[k]) e.setAttribute('disabled','disabled'); }
+    else if(k === 'selected'){ e.selected = !!attrs[k]; }
     else e.setAttribute(k, attrs[k]);
   }
   (Array.isArray(children)?children:[children]).forEach(c => { if(c) e.appendChild(c); });
@@ -399,6 +500,7 @@ function buildStep1(){
         mapRow('Equipo', 'teamCol'),
         mapRow('Posición', 'posCol'),
         mapRow('Minutos', 'minutesCol'),
+        mapRow('Pie', 'footCol'),
       ])
     );
   }
@@ -498,13 +600,14 @@ function applyPreset(preset, includePhysical){
       if(col) metrics.push({ id: uid('m'), col, label: mdef.label, invert: !!mdef.invert, wide: !!mdef.wide, labelTouched: true });
       else missing++;
     });
-    if(metrics.length) newCats.push({ id: uid('c'), name: catDef.name, color: PALETTE[idx % PALETTE.length], colorIdx: idx % PALETTE.length, metrics });
+    if(metrics.length) newCats.push({ id: uid('c'), name: catDef.name, color: PALETTE[idx % PALETTE.length], colorIdx: idx % PALETTE.length, baseWeight:catDef.baseWeight, metrics });
   });
   if(!newCats.length){
     alert('Ninguna columna de tu tabla coincide con los nombres típicos de este preset. Probá armar las métricas manualmente en el paso 3.');
     return;
   }
   state.categories = newCats;
+  state.profile.lastCategorySignature = null;
   renderSidebar();
   renderMain();
   if(missing){
@@ -1207,6 +1310,7 @@ function legendItem(color, label){
 
 function renderMain(){
   const main = document.getElementById('main');
+  const _scrollTop = main.scrollTop; // se restaura al final para que abrir/cerrar un informe no te tire arriba de la página
   // fragment rendering
   const frag = document.createDocumentFragment();
 
@@ -1216,14 +1320,16 @@ function renderMain(){
     frag.appendChild(empty);
     main.innerHTML = '';
     main.appendChild(frag);
+    main.scrollTop = _scrollTop;
     return;
   }
 
   const hasMetrics = state.categories.some(c=>c.metrics.some(m=>m.col));
 
-  // Pestañas Rueda individual / Comparación — solo tienen sentido una vez
-  // que hay al menos una métrica cargada (si no, no hay nada que comparar).
-  if(hasMetrics){
+  // La pestaña de seguimiento también es útil aunque el archivo actual no
+  // tenga métricas configuradas todavía, así que las pestañas aparecen con
+  // cualquier tabla cargada.
+  if(state.rows.length){
     frag.appendChild(renderModeTabs());
   }
 
@@ -1231,6 +1337,7 @@ function renderMain(){
     frag.appendChild(renderCompareView());
     main.innerHTML = '';
     main.appendChild(frag);
+    main.scrollTop = _scrollTop;
     try{
       fitLabelsToArcs(document.getElementById('wheel-svg-a'));
       fitLabelsToArcs(document.getElementById('wheel-svg-b'));
@@ -1242,6 +1349,15 @@ function renderMain(){
     frag.appendChild(renderProfileView());
     main.innerHTML = '';
     main.appendChild(frag);
+    main.scrollTop = _scrollTop;
+    return;
+  }
+
+  if(state.viewMode === 'shortlist'){
+    frag.appendChild(renderShortlistView());
+    main.innerHTML = '';
+    main.appendChild(frag);
+    main.scrollTop = _scrollTop;
     return;
   }
 
@@ -1251,6 +1367,7 @@ function renderMain(){
     frag.appendChild(empty);
     main.innerHTML = '';
     main.appendChild(frag);
+    main.scrollTop = _scrollTop;
     return;
   }
 
@@ -1282,6 +1399,13 @@ function renderMain(){
   headerRow.appendChild(titleBlock);
   headerRow.appendChild(flagBlock);
   card.appendChild(headerRow);
+  const shortlistAction = el('div', {class:'no-print', style:'display:flex;justify-content:flex-end;margin:-4px 4px 8px;'}, [
+    el('button', {class:'btn btn-sm', text: isShortlisted(state.selectedRow) ? '✓ En seguimiento' : '☆ Añadir a seguimiento', onclick:()=>{
+      upsertShortlist(state.selectedRow, { profile: [state.presetUI.position, state.presetUI.role].filter(Boolean).join(' · ') });
+      renderMain();
+    }}),
+  ]);
+  card.appendChild(shortlistAction);
   card.appendChild(el('div', {style:'height:1px;background:linear-gradient(90deg, var(--gold), transparent);margin:0 4px 10px;'}));
 
 
@@ -1319,6 +1443,7 @@ function renderMain(){
   frag.appendChild(resultRow);
   main.innerHTML = '';
   main.appendChild(frag);
+  main.scrollTop = _scrollTop;
 
   // fit labels now the SVG is in DOM (puede ser algo costoso, pero necesario)
   try{ fitLabelsToArcs(document.getElementById('wheel-svg')); }catch(e){}
@@ -1708,8 +1833,8 @@ async function exportPNG(){
 /* ---- Guardar / cargar configuración (categorías, métricas, filtros, meta) ---- */
 function exportConfig(){
   const cfg = {
-    playerCol: state.playerCol, teamCol: state.teamCol, posCol: state.posCol, minutesCol: state.minutesCol, ageCol: state.ageCol,
-    filters: state.filters, categories: state.categories, meta: state.meta
+    playerCol: state.playerCol, teamCol: state.teamCol, posCol: state.posCol, minutesCol: state.minutesCol, ageCol: state.ageCol, footCol: state.footCol,
+    filters: state.filters, categories: state.categories, meta: state.meta, presetUI:state.presetUI, profile:state.profile
   };
   const blob = new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
@@ -1725,8 +1850,9 @@ function importConfig(file){
       // validación mínima
       if(cfg && typeof cfg === 'object'){
         Object.assign(state, {
-          playerCol: cfg.playerCol, teamCol: cfg.teamCol, posCol: cfg.posCol, minutesCol: cfg.minutesCol, ageCol: cfg.ageCol || state.ageCol,
-          filters: cfg.filters || [], categories: cfg.categories || [], meta: cfg.meta || state.meta
+          playerCol: cfg.playerCol, teamCol: cfg.teamCol, posCol: cfg.posCol, minutesCol: cfg.minutesCol, ageCol: cfg.ageCol || state.ageCol, footCol:cfg.footCol || state.footCol,
+          filters: cfg.filters || [], categories: cfg.categories || [], meta: cfg.meta || state.meta,
+          presetUI: cfg.presetUI || state.presetUI, profile: cfg.profile || state.profile
         });
         refreshAll();
         alert('Configuración cargada. Elegí el jugador y generá el gráfico.');
@@ -1751,6 +1877,7 @@ document.addEventListener('DOMContentLoaded', refreshAll);
 // estas piezas en vez de reimplementarlas.
 export {
   state, el, opt, sortedRowsForPicker, playerLabel, titleForRow, resolveCountryName,
-  groupRows, numVal, computePercentile, fmtVal, renderWheelSVG, renderMain, ordinal, bucketColor,
-  applyPreset,
+  groupRows, comparisonContextLabel, numVal, computePercentile, fmtVal, renderWheelSVG, renderMain, ordinal, bucketColor,
+  applyPreset, shortlistKey, loadShortlist, isShortlisted, getShortlistItem, upsertShortlist, updateShortlistItem, removeShortlistItem,
+  selectPlayerForWheel,
 };

@@ -233,3 +233,26 @@ PRESETS.push(
 
   { position:'Personalizado', role:'Crear mi propia selección', custom:true, categories:[C('Mi categoría', [])] },
 );
+
+/* Hipótesis base explícitas por rol. Son el punto de partida reproducible
+   del departamento (no una gradiente derivada del orden de categorías);
+   cada scout puede ajustarlas y guardar su propio perfil encima. */
+const ROLE_BASE_WEIGHTS = {
+  'Portero|Portero Tradicional':[55,25,20], 'Portero|Portero Líbero':[40,35,25],
+  'Central|Central Defensivo':[55,15,30], 'Central|Central Constructor':[25,45,30],
+  'Lateral|Lateral Clásico':[40,35,25], 'Lateral|Carrilero':[30,45,25], 'Lateral|Lateral Invertido':[35,40,25],
+  'Mediocentro Defensivo|Recuperador':[55,30,15], 'Mediocentro Defensivo|Regista':[25,45,30],
+  'Interior|Box to Box':[30,35,35], 'Interior|Organizador':[20,45,35], 'Interior|Llegador':[25,45,30],
+  'Mediapunta|Enganche':[45,35,20], 'Mediapunta|Segundo Punta':[30,35,35],
+  'Extremo|Extremo Clásico':[40,35,25], 'Extremo|Extremo Invertido':[35,30,35], 'Extremo|Extremo Creador':[25,50,25],
+  'Delantero|Poacher':[60,20,20], 'Delantero|Target Man':[40,20,40], 'Delantero|Falso 9':[30,45,25], 'Delantero|Pressing Forward':[40,25,35],
+};
+PRESETS.forEach(preset => {
+  const weights = ROLE_BASE_WEIGHTS[`${preset.position}|${preset.role}`];
+  if(!weights) return;
+  preset.categories.forEach((category, index) => {
+    // GPS es opt-in: no altera la hipótesis táctica base hasta que el scout
+    // le asigne peso explícitamente.
+    category.baseWeight = category.physical ? 0 : (weights[index] ?? 0);
+  });
+});

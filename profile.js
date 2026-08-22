@@ -18,7 +18,8 @@
 
 import {
   state, el, groupRows, numVal, computePercentile, fmtVal, playerLabel,
-  renderMain, bucketColor, applyPreset,
+  renderMain, bucketColor, applyPreset, comparisonContextLabel, isShortlisted,
+  getShortlistItem, upsertShortlist, updateShortlistItem, selectPlayerForWheel,
 } from './app.js';
 import { PRESETS } from './presets.js';
 
@@ -32,52 +33,71 @@ function fitLabel(score){
   return { emoji:'🔴', text:'Bajo ajuste' };
 }
 
-/* ---- Confianza: independiente del Fit. Combina 4 factores como se
-   discutió. OJO — el factor C ("consistencia") es una aproximación mía,
-   no una definición estándar: mide qué tan parejas son las categorías de
-   MAYOR peso (desvío estándar bajo = cuentan una historia consistente).
-   Los pesos 35/20/25/20 entre factores también son un punto de partida
-   razonable, no un resultado derivado de nada — ajustalos si con uso real
-   ves que algún factor debería pesar más o menos. ---- */
-function computeConfidence(breakdown, groupSize){
+/* ---- Calidad de datos: independiente del Fit. Mide la evidencia
+   disponible; la muestra del jugador se calcula aparte con sus minutos.
+   NO homogeneidad del perfil del jugador — un perfil especializado
+   (ej. 95 en defensa, 90 en duelos, 88 en recuperación, 25 en
+   construcción) no es un dato "poco confiable", es un perfil
+   especializado, y puede ser exactamente lo que se busca. Por eso NO hay
+   ningún factor de "consistencia entre categorías" acá — se sacó por
+   completo. Los factores reales que sí se usan son cobertura de datos,
+   tamaño del universo comparado y dato crítico faltante.
+   "Contexto de comparación" (D) se calcula pero es solo informativo, no
+   afecta la etiqueta alta/media/baja (ver nota más abajo). ---- */
+function computeDataQuality(breakdown, groupSize, hasContextFilter){
   // A. cobertura: de todas las métricas elegidas, ¿cuántas tiene el jugador?
   const totalMetrics = breakdown.reduce((a, b) => a + b.nTotal, 0);
   const okMetrics = breakdown.reduce((a, b) => a + b.nOk, 0);
   const coveragePct = totalMetrics > 0 ? (okMetrics / totalMetrics) * 100 : 0;
 
-  // B. tamaño de muestra del grupo de comparación (igual para todos los
-  // jugadores de este ranking — a más jugadores, percentiles más estables)
-  const sampleScore = groupSize >= 60 ? 100 : groupSize >= 30 ? 75 : groupSize >= 15 ? 50 : 25;
-
-  // C. consistencia (aproximación): desvío estándar entre las categorías
-  // de mayor peso (por encima de la mediana de pesos) que sí tienen dato.
-  const weights = breakdown.map(b => b.weight);
-  const sortedW = weights.slice().sort((a, b) => a - b);
-  const medianWeight = sortedW.length ? sortedW[Math.floor(sortedW.length / 2)] : 0;
-  const important = breakdown.filter(b => b.weight >= medianWeight && b.avgPct !== null);
-  let consistencyScore = 100;
-  if(important.length >= 2){
-    const vals = important.map(b => b.avgPct);
-    const mean = vals.reduce((a, v) => a + v, 0) / vals.length;
-    const variance = vals.reduce((a, v) => a + (v - mean) ** 2, 0) / vals.length;
-    consistencyScore = Math.max(0, 100 - Math.sqrt(variance) * 1.4);
-  }
-
-  // D. dato crítico faltante: alguna categoría de peso alto (>=70) sin
-  // ningún dato para este jugador — esto es una bandera roja fuerte, no
-  // solo "un poco menos de cobertura".
+  // B. dato crítico faltante: alguna categoría de peso alto (>=70) sin
+  // ningún dato para este jugador — bandera roja fuerte.
   const missingCritical = breakdown.some(b => b.weight >= 70 && b.avgPct === null);
 
-  let score = coveragePct * 0.35 + sampleScore * 0.20 + consistencyScore * 0.25 + (missingCritical ? 0 : 100) * 0.20;
-  if(missingCritical) score = Math.min(score, 35); // tope duro: si falta un dato que pesa mucho, la confianza cae directo a "Baja" (no alcanza con dejarla en "Media") — así la regla de Prioridad que busca justamente confianza baja + fit alto ("revisar antes de priorizar") se activa de forma consistente
-  score = Math.round(Math.max(0, Math.min(100, score)));
+  // Reglas explícitas y categóricas — nada de score numérico ponderado
+  // por dentro. NOTA: sacamos por completo el factor "consistencia entre
+  // categorías" que tenía la versión anterior — penalizaba perfiles
+  // especializados (ej. un central excelente en duelos pero limitado con
+  // pelota), que en scouting suelen ser justamente los más interesantes,
+  // no un problema de confiabilidad del dato.
+  let key;
+  if(missingCritical || coveragePct < 60){
+    key = 'baja';
+  }else if(coveragePct >= 85 && groupSize >= 30){
+    key = 'alta';
+  }else{
+    key = 'media';
+  }
+  const labels = {
+    alta: { emoji:'🟢', text:'Alta' },
+    media:{ emoji:'🟡', text:'Media' },
+    baja: { emoji:'🔴', text:'Baja' },
+  };
 
-  let label;
-  if(score >= 70) label = { key:'alta', emoji:'🟢', text:'Alta' };
-  else if(score >= 40) label = { key:'media', emoji:'🟡', text:'Media' };
-  else label = { key:'baja', emoji:'🔴', text:'Baja' };
+  // "Calidad del contexto": si el grupo de comparación no tiene ningún
+  // filtro aplicado (se está comparando contra TODA la tabla cargada, que
+  // puede mezclar posiciones/competencias muy distintas), lo marcamos como
+  // nota informativa — no lo usamos para bajar la etiqueta alta/media/baja
+  // automáticamente porque comparar contra un grupo amplio a veces es una
+  // decisión válida del scout, no necesariamente un problema.
+  return {
+    label: { key, ...labels[key] },
+    coveragePct: Math.round(coveragePct),
+    groupSize,
+    missingCritical,
+    hasContextFilter,
+  };
+}
 
-  return { score, label, coveragePct: Math.round(coveragePct), sampleScore, consistencyScore: Math.round(consistencyScore), missingCritical };
+/* La muestra del jugador es distinta de la calidad de datos: usa sus
+   minutos reales, no el tamaño del universo comparado. */
+function computePlayerSample(row){
+  const minutes = state.minutesCol ? numVal(row, state.minutesCol) : null;
+  if(minutes === null) return { key:'sin_dato', text:'Sin dato de minutos', minutes:null, color:'var(--ink-faint)' };
+  if(minutes >= 1800) return { key:'amplia', text:'amplia', minutes, color:'var(--green)' };
+  if(minutes >= 900) return { key:'suficiente', text:'suficiente', minutes, color:'var(--blue)' };
+  if(minutes >= 450) return { key:'reducida', text:'reducida', minutes, color:'var(--amber)' };
+  return { key:'muy_reducida', text:'muy reducida', minutes, color:'var(--red)' };
 }
 
 /* ---- Prioridad de scouting: combina Fit + Confianza con reglas
@@ -87,8 +107,8 @@ function computeConfidence(breakdown, groupSize){
    "revisar antes de priorizar" es justamente para el escenario que
    describiste: fit alto pero confianza baja no debería leerse como
    prioridad alta automática. ---- */
-function computePriority(fitScore, confidenceKey){
-  if(fitScore >= 75 && confidenceKey === 'baja') return { key:'revisar', emoji:'🟡', text:'Revisar antes de priorizar' };
+function computePriority(fitScore, confidenceKey, sampleKey){
+  if(fitScore >= 75 && (confidenceKey === 'baja' || sampleKey === 'muy_reducida')) return { key:'revisar', emoji:'🟡', text:'Revisar antes de priorizar' };
   if(fitScore >= 75) return { key:'alta', emoji:'🟢', text:'Prioridad alta' };
   if(fitScore >= 65) return confidenceKey === 'alta'
     ? { key:'alta', emoji:'🟢', text:'Prioridad alta' }
@@ -136,28 +156,25 @@ function categorySignature(categories){
   return categories.map(c => c.name).join('|');
 }
 
-/* Pesos por default cuando se entra a esta pestaña por primera vez con
-   un conjunto de categorías nuevo (recién cargado el preset, por ejemplo):
-   la primera categoría del preset (que suele ser la identidad principal
-   del rol, ej. "Defensa y duelos" en un Central) pesa más, en una
-   progresión lineal descendente que suma EXACTO 100 entre todas. No es
-   una ciencia exacta — es una heurística razonable de arranque; el
-   usuario la termina de ajustar con los sliders. */
+/* Pesos iniciales: los presets traen una hipótesis explícita por rol.
+   Para una selección manual, se reparte en partes iguales en vez de
+   inventar una prioridad por el orden de las categorías. */
 function ensureDefaultWeights(categories){
   const sig = categorySignature(categories);
   if(state.profile.lastCategorySignature === sig) return; // ya están seteados, no los tocamos
-  const n = categories.length;
-  const rawSum = (n * (n + 1)) / 2;
+  const explicit = categories.every(c => typeof c.baseWeight === 'number');
+  const equal = Math.floor(100 / categories.length);
+  const baseTotal = explicit ? categories.reduce((sum, c) => sum + Math.max(0, c.baseWeight), 0) : 0;
   let assigned = 0;
   categories.forEach((c, i) => {
-    let w;
-    if(i === n - 1){
-      w = 100 - assigned; // el último ajusta el resto para que la suma dé justo 100 (evita errores de redondeo)
+    let weight;
+    if(baseTotal > 0){
+      weight = i === categories.length - 1 ? 100 - assigned : Math.round((c.baseWeight / baseTotal) * 100);
+      assigned += weight;
     }else{
-      w = Math.round((100 * (n - i)) / rawSum);
-      assigned += w;
+      weight = i === categories.length - 1 ? 100 - equal * i : equal;
     }
-    state.profile.weights[c.name] = w;
+    state.profile.weights[c.name] = weight;
   });
   state.profile.lastCategorySignature = sig;
 }
@@ -196,28 +213,117 @@ function computeFitScore(row, categories, group){
       weightTotal += w;
     }
   });
+  breakdown.forEach(b => {
+    b.contribution = b.avgPct !== null && weightTotal > 0 ? ((b.avgPct - 50) * b.weight / weightTotal) : null;
+  });
   const score = weightTotal > 0 ? weightedSum / weightTotal : null;
   return { score, breakdown };
 }
 
+/* ========================================================================
+   BIBLIOTECA DE PERFILES GUARDADOS — distinto del "Guardar configuración"
+   que ya existe (ese es un archivo .json para descargar/compartir). Esto
+   es una lista con nombre, persistida en localStorage del navegador, para
+   volver a aplicar un perfil objetivo completo (categorías + pesos +
+   filtros de grupo + contexto del preset) con un clic. Vive solo en este
+   navegador — no se sincroniza entre dispositivos, eso requeriría un
+   backend que esta app no tiene.
+   ======================================================================== */
+const PROFILE_LIBRARY_KEY = 'ruedaPercentiles_perfilesGuardados_v1';
+
+function loadProfileLibrary(){
+  try{
+    const raw = localStorage.getItem(PROFILE_LIBRARY_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  }catch(e){ return []; }
+}
+function persistProfileLibrary(list){
+  try{
+    localStorage.setItem(PROFILE_LIBRARY_KEY, JSON.stringify(list));
+    return true;
+  }catch(e){
+    alert('No se pudo guardar el perfil (¿localStorage lleno o bloqueado por el navegador?).');
+    return false;
+  }
+}
+function saveCurrentAsProfile(name){
+  const list = loadProfileLibrary();
+  list.push({
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    name,
+    createdAt: new Date().toISOString(),
+    config: {
+      categories: state.categories,
+      weights: state.profile.weights,
+      filters: state.filters,
+      presetUI: state.presetUI,
+    },
+  });
+  return persistProfileLibrary(list);
+}
+function deleteSavedProfile(id){
+  persistProfileLibrary(loadProfileLibrary().filter(p => p.id !== id));
+}
+function applySavedProfile(entry){
+  const cfg = entry.config || {};
+  state.categories = cfg.categories || [];
+  state.profile.weights = cfg.weights || {};
+  // clave: dejamos marcada la firma de categorías como "ya seteada" para
+  // que ensureDefaultWeights() NO pise los pesos que acabamos de cargar
+  // con los defaults automáticos.
+  state.profile.lastCategorySignature = categorySignature(state.categories.filter(c => c.metrics.some(m => m.col)));
+  state.filters = cfg.filters || [];
+  state.presetUI = cfg.presetUI || state.presetUI;
+  state.profileExpanded = null;
+  renderMain();
+}
+
 function computeProfileRanking(){
   const categories = profileCategories();
+  ensureDefaultWeights(categories);
   const group = groupRows();
   const rows = group
     .map(r => {
       const { score, breakdown } = computeFitScore(r, categories, group);
-      const confidence = score !== null ? computeConfidence(breakdown, group.length) : null;
-      const priority = (score !== null && confidence) ? computePriority(score, confidence.label.key) : null;
+      const hasContextFilter = state.filters && state.filters.length > 0;
+      const dataQuality = score !== null ? computeDataQuality(breakdown, group.length, hasContextFilter) : null;
+      const sample = computePlayerSample(r);
+      const priority = (score !== null && dataQuality) ? computePriority(score, dataQuality.label.key, sample.key) : null;
       return {
         ref: r,
         name: state.playerCol ? String(r[state.playerCol] ?? '') : '?',
         team: state.teamCol ? String(r[state.teamCol] ?? '') : '',
-        score, breakdown, confidence, priority,
+        age: state.ageCol ? numVal(r, state.ageCol) : null,
+        minutes: sample.minutes,
+        foot: state.footCol ? String(r[state.footCol] ?? '') : '',
+        nationality: state.passportCol ? String(r[state.passportCol] ?? '') : '',
+        score, breakdown, dataQuality, sample, priority,
       };
     })
     .filter(r => r.score !== null)
     .sort((a, b) => b.score - a.score);
   return { rows, categories };
+}
+
+export function getPlayerInsight(row){
+  const categories = profileCategories();
+  if(!categories.length) return null;
+  ensureDefaultWeights(categories);
+  const group = groupRows();
+  const { score, breakdown } = computeFitScore(row, categories, group);
+  if(score === null) return null;
+  const dataQuality = computeDataQuality(breakdown, group.length, state.filters.length > 0);
+  const sample = computePlayerSample(row);
+  return { score, breakdown, dataQuality, sample, priority:computePriority(score, dataQuality.label.key, sample.key) };
+}
+
+function shortlistSnapshot(r){
+  return {
+    profile: [state.presetUI.position, state.presetUI.role].filter(Boolean).join(' · ') || 'Perfil personalizado',
+    fit: r.score, priority:r.priority ? r.priority.text : '', dataQuality:r.dataQuality ? r.dataQuality.label.text : '',
+    sample:r.sample ? r.sample.text : '',
+  };
 }
 
 export function renderProfileView(){
@@ -249,6 +355,47 @@ export function renderProfileView(){
   });
   presetBox.appendChild(presetSelect);
   wrap.appendChild(presetBox);
+
+  /* ---- Biblioteca de perfiles guardados ---- */
+  const libraryBox = el('div', {style:'background:var(--panel-2);border:1px solid var(--border);border-radius:14px;padding:14px 20px;width:100%;'});
+  libraryBox.appendChild(el('div', {text:'Mis perfiles guardados', style:'font-family:var(--font-display);font-size:13px;font-weight:700;color:var(--ink);margin-bottom:8px;'}));
+
+  const savedProfiles = loadProfileLibrary();
+  if(savedProfiles.length){
+    const listWrap = el('div', {style:'display:flex;flex-direction:column;gap:6px;margin-bottom:12px;'});
+    savedProfiles.forEach(p => {
+      const dateStr = p.createdAt ? new Date(p.createdAt).toLocaleDateString('es-AR') : '';
+      listWrap.appendChild(el('div', {style:'display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 10px;background:#0D1220;border-radius:7px;border:1px solid var(--border);'}, [
+        el('div', {style:'min-width:0;'}, [
+          el('div', {text:p.name, style:'font-size:12px;color:var(--ink-dim);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'}),
+          dateStr ? el('div', {text:`Guardado ${dateStr}`, style:'font-size:9.5px;color:var(--ink-faint);'}) : null,
+        ]),
+        el('div', {style:'display:flex;gap:6px;flex-shrink:0;'}, [
+          el('button', {class:'btn btn-sm', text:'Cargar', onclick:()=>applySavedProfile(p)}),
+          el('button', {class:'btn-icon', html:'&times;', title:'Eliminar', onclick:()=>{
+            if(confirm(`¿Eliminar el perfil "${p.name}"? No se puede deshacer.`)){ deleteSavedProfile(p.id); renderMain(); }
+          }}),
+        ]),
+      ]));
+    });
+    libraryBox.appendChild(listWrap);
+  }else{
+    libraryBox.appendChild(el('div', {class:'helptext', text:'Todavía no guardaste ningún perfil. Ajustá las categorías y los pesos como quieras y guardalo abajo para volver a usarlo después (queda guardado en este navegador).', style:'margin-bottom:12px;'}));
+  }
+
+  const saveRow = el('div', {style:'display:flex;gap:8px;'});
+  const nameInput = el('input', {type:'text', placeholder:'Nombre del perfil (ej: Central — Presión alta)', style:'flex:1;'});
+  nameInput.addEventListener('keydown', (e) => { if(e.key === 'Enter') saveBtn.click(); });
+  const saveBtn = el('button', {class:'btn btn-gold', text:'Guardar perfil actual', onclick:() => {
+    const name = nameInput.value.trim();
+    if(!name){ alert('Ponele un nombre al perfil antes de guardar.'); return; }
+    if(saveCurrentAsProfile(name)) renderMain();
+  }});
+  saveRow.appendChild(nameInput);
+  saveRow.appendChild(saveBtn);
+  libraryBox.appendChild(saveRow);
+
+  wrap.appendChild(libraryBox);
 
   ensureDefaultWeights(categories);
 
@@ -300,7 +447,8 @@ export function renderProfileView(){
   const { rows } = computeProfileRanking();
   const listBox = el('div', {style:'background:var(--panel-2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;width:100%;'});
   listBox.appendChild(el('div', {text:`Ranking de adecuación al perfil (${rows.length} jugadores)`, style:'font-family:var(--font-display);font-size:14px;font-weight:700;color:var(--ink);margin-bottom:4px;'}));
-  listBox.appendChild(el('div', {text:'Tocá un jugador para ver el desglose por categoría.', style:'font-size:11px;color:var(--ink-faint);margin-bottom:10px;'}));
+  listBox.appendChild(el('div', {text:`Universo: ${comparisonContextLabel()}`, style:'font-size:11px;color:var(--gold);font-weight:700;margin:5px 0 2px;'}));
+  listBox.appendChild(el('div', {text:'Abrí un jugador para ver su ficha de decisión; la rueda completa queda como segundo paso.', style:'font-size:11px;color:var(--ink-faint);margin-bottom:10px;'}));
 
   if(!rows.length){
     listBox.appendChild(el('div', {class:'helptext', text:'Ningún jugador del grupo tiene datos suficientes para calcular un score con las categorías elegidas.'}));
@@ -308,36 +456,114 @@ export function renderProfileView(){
     return wrap;
   }
 
-  const list = el('div', {style:'display:flex;flex-direction:column;gap:4px;max-height:640px;overflow-y:auto;'});
-  const colHead = el('div', {style:'display:grid;grid-template-columns:30px 1fr 100px 90px 150px;gap:8px;padding:0 10px 4px;flex-shrink:0;'}, [
+  const filters = state.profileFilters;
+  const quick = el('div', {style:'display:flex;gap:7px;flex-wrap:wrap;margin:10px 0;'});
+  const quickSelect = (key, placeholder, options) => {
+    const select = el('select', {style:'width:auto;min-width:135px;font-size:11px;padding:6px 8px;'});
+    select.appendChild(el('option', {value:'', text:placeholder}));
+    options.forEach(o => select.appendChild(el('option', {value:o.value, text:o.label, selected:filters[key]===o.value})));
+    select.addEventListener('change', e => { filters[key] = e.target.value; renderMain(); });
+    quick.appendChild(select);
+  };
+  quickSelect('priority', 'Prioridad', [{value:'alta',label:'Sólo prioridad alta'},{value:'media',label:'Prioridad media'},{value:'baja',label:'Prioridad baja'},{value:'revisar',label:'Revisar'}]);
+  quickSelect('age', 'Edad', [{value:'u23',label:'≤ 23 años'},{value:'u28',label:'≤ 28 años'},{value:'o28',label:'> 28 años'}]);
+  quickSelect('minutes', 'Minutos', [{value:'900',label:'≥ 900 min'},{value:'1800',label:'≥ 1.800 min'},{value:'low',label:'< 900 min'}]);
+  const clubs = [...new Set(rows.map(r=>r.team).filter(Boolean))].sort();
+  if(clubs.length) quickSelect('club', 'Club', clubs.map(v=>({value:v,label:v})));
+  const feet = [...new Set(rows.map(r=>r.foot).filter(Boolean))].sort();
+  if(feet.length) quickSelect('foot', 'Pie', feet.map(v=>({value:v,label:v})));
+  const nations = [...new Set(rows.map(r=>r.nationality).filter(Boolean))].sort();
+  if(nations.length) quickSelect('nationality', 'Nacionalidad', nations.map(v=>({value:v,label:v})));
+  quickSelect('shortlisted', 'Seguimiento', [{value:'yes',label:'Añadidos a seguimiento'}]);
+  listBox.appendChild(quick);
+  const columnPicker = el('div', {style:'display:flex;gap:10px;flex-wrap:wrap;margin:-3px 0 10px;align-items:center;'});
+  columnPicker.appendChild(el('span', {text:'Mostrar:', style:'font-size:10px;color:var(--ink-faint);'}));
+  [['age','Edad'],['minutes','Minutos'],['club','Club'],['foot','Pie'],['nationality','Nacionalidad']].forEach(([key,label]) => {
+    const check = el('input', {type:'checkbox'}); check.checked = !!state.profileColumns[key];
+    check.addEventListener('change', e=>{ state.profileColumns[key] = e.target.checked; renderMain(); });
+    columnPicker.appendChild(el('label', {style:'display:flex;align-items:center;gap:4px;font-size:10px;color:var(--ink-dim);cursor:pointer;'}, [check, el('span',{text:label})]));
+  });
+  listBox.appendChild(columnPicker);
+  const shownRows = rows.filter(r => {
+    if(filters.priority && r.priority.key !== filters.priority) return false;
+    if(filters.age==='u23' && !(r.age <= 23)) return false;
+    if(filters.age==='u28' && !(r.age <= 28)) return false;
+    if(filters.age==='o28' && !(r.age > 28)) return false;
+    if(filters.minutes==='900' && !(r.minutes >= 900)) return false;
+    if(filters.minutes==='1800' && !(r.minutes >= 1800)) return false;
+    if(filters.minutes==='low' && !(r.minutes < 900)) return false;
+    if(filters.club && r.team !== filters.club) return false;
+    if(filters.foot && r.foot !== filters.foot) return false;
+    if(filters.nationality && r.nationality !== filters.nationality) return false;
+    if(filters.shortlisted==='yes' && !isShortlisted(r.ref)) return false;
+    return true;
+  });
+  const list = el('div', {style:'display:flex;flex-direction:column;gap:4px;max-height:640px;overflow:auto;'});
+  const colHead = el('div', {style:'display:grid;grid-template-columns:30px 1fr 80px 130px 125px 100px;gap:8px;padding:0 10px 4px;flex-shrink:0;'}, [
     el('span', {}),
     el('span', {}),
     el('span', {text:'FIT', style:'font-size:9px;color:var(--ink-faint);text-align:right;letter-spacing:.4px;'}),
-    el('span', {text:'CONFIANZA', style:'font-size:9px;color:var(--ink-faint);text-align:right;letter-spacing:.4px;'}),
+    el('span', {text:'CALIDAD · MUESTRA', style:'font-size:9px;color:var(--ink-faint);text-align:right;letter-spacing:.4px;'}),
     el('span', {text:'PRIORIDAD', style:'font-size:9px;color:var(--ink-faint);text-align:right;letter-spacing:.4px;'}),
+    el('span', {text:'ACCIÓN', style:'font-size:9px;color:var(--ink-faint);text-align:right;letter-spacing:.4px;'}),
   ]);
   list.appendChild(colHead);
-  rows.forEach((r, i) => {
+  shownRows.forEach((r, i) => {
     const isExpanded = state.profileExpanded === r.ref;
     const scoreRounded = Math.round(r.score);
     const fLabel = fitLabel(scoreRounded);
     const rowBox = el('div', {style:`border-radius:8px;overflow:hidden;flex-shrink:0;border:1px solid ${isExpanded ? 'var(--gold)' : 'transparent'};`});
 
     const header = el('div', {
-      style:`display:grid;grid-template-columns:30px 1fr 100px 90px 150px;gap:8px;align-items:center;padding:8px 10px;cursor:pointer;
+      style:`display:grid;grid-template-columns:30px 1fr 80px 130px 125px 100px;gap:8px;align-items:center;padding:8px 10px;cursor:pointer;
              background:${isExpanded ? 'var(--gold-soft)' : (i < 3 ? '#151C2C' : '#0D1220')};transition:background .15s ease;`,
-      onclick: () => { state.profileExpanded = isExpanded ? null : r.ref; renderMain(); },
+      onclick: () => {
+        const sel = window.getSelection();
+        if(sel && sel.toString().length > 0) return; // estaba seleccionando texto para copiar, no togglear
+        state.profileExpanded = isExpanded ? null : r.ref;
+        renderMain();
+      },
     }, [
       el('span', {text:'#' + (i + 1), style:'font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);'}),
-      el('span', {text: r.team ? `${r.name} — ${r.team}` : r.name, style:'font-size:12.5px;color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'}),
+      el('div', {style:'min-width:0;'}, [
+        el('div', {text:r.name, style:'font-size:12.5px;color:var(--ink);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'}),
+        (() => {
+          const bits = [];
+          if(state.profileColumns.club && r.team) bits.push(r.team);
+          if(state.profileColumns.age && r.age !== null) bits.push(`${Math.round(r.age)} años`);
+          if(state.profileColumns.minutes && r.minutes !== null) bits.push(`${Math.round(r.minutes)} min`);
+          if(state.profileColumns.foot && r.foot) bits.push(r.foot);
+          if(state.profileColumns.nationality && r.nationality) bits.push(r.nationality);
+          return bits.length ? el('div', {text:bits.join(' · '), style:'font-size:9.5px;color:var(--ink-faint);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:2px;'}) : null;
+        })(),
+      ]),
       el('span', {text: `${fLabel.emoji} ${scoreRounded}%`, style:`font-family:var(--font-mono);font-weight:700;font-size:12px;color:${bucketColor(scoreRounded)};text-align:right;white-space:nowrap;`}),
-      el('span', {text: `${r.confidence.label.emoji} ${r.confidence.label.text}`, style:'font-size:11px;color:var(--ink-dim);text-align:right;white-space:nowrap;'}),
+      el('span', {text: `${r.dataQuality.label.emoji} ${r.dataQuality.label.text} · ${r.sample.minutes === null ? '—' : Math.round(r.sample.minutes)+' min'} ${r.sample.text}`, style:'font-size:10px;color:var(--ink-dim);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'}),
       el('span', {text: `${r.priority.emoji} ${r.priority.text}`, style:'font-size:11px;color:var(--ink-dim);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'}),
+      el('button', {class:'btn btn-sm', text:isShortlisted(r.ref) ? '✓ Seguimiento' : '☆ Seguir', style:'font-size:10px;padding:4px 6px;', onclick:(e)=>{ e.stopPropagation(); upsertShortlist(r.ref, shortlistSnapshot(r)); renderMain(); }}),
     ]);
     rowBox.appendChild(header);
 
     if(isExpanded){
       const detail = el('div', {style:'padding:12px 14px 14px;background:#0A0E17;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:12px;'});
+
+      // Ficha breve: primero la decisión operativa; la rueda queda disponible
+      // sólo cuando hace falta profundizar.
+      const positives = r.breakdown.filter(b => b.contribution > 0).length;
+      const alerts = r.breakdown.filter(b => b.contribution < 0).length;
+      const summaryCard = el('div', {style:'display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:11px 12px;background:#111927;border:1px solid var(--border);border-radius:9px;'}, [
+        el('div', {style:'display:flex;gap:14px;flex-wrap:wrap;align-items:center;'}, [
+          el('span', {text:`Fit ${scoreRounded}%`, style:`font-family:var(--font-mono);font-weight:700;color:${bucketColor(scoreRounded)};font-size:12px;`} ),
+          el('span', {text:`Muestra ${r.sample.minutes === null ? '—' : Math.round(r.sample.minutes) + ' min'} · ${r.sample.text}`, style:`font-size:11px;color:${r.sample.color};`} ),
+          el('span', {text:`${positives} fortalezas · ${alerts} alertas`, style:'font-size:11px;color:var(--ink-dim);'}),
+          el('span', {text:r.priority.text, style:'font-size:11px;color:var(--ink);font-weight:700;'}),
+        ]),
+        el('div', {style:'display:flex;gap:6px;'}, [
+          el('button', {class:'btn btn-sm', text:isShortlisted(r.ref) ? '✓ En seguimiento' : 'Añadir a video', onclick:()=>{ upsertShortlist(r.ref, {...shortlistSnapshot(r), status:'Ver video'}); renderMain(); }}),
+          el('button', {class:'btn btn-sm', text:'Abrir rueda completa', onclick:()=>selectPlayerForWheel(r.ref)}),
+        ]),
+      ]);
+      detail.appendChild(summaryCard);
 
       // 1) Fit — explicación + disclaimer metodológico, siempre visible
       detail.appendChild(el('div', {}, [
@@ -346,39 +572,41 @@ export function renderProfileView(){
         el('div', {text:'Es exclusivamente coincidencia estadística con el perfil definido — no representa probabilidad de rendimiento ni garantía de adaptación.', style:'font-size:10px;color:var(--ink-faint);line-height:1.5;'}),
       ]));
 
-      // 2) Confianza — independiente del Fit, con sus 4 factores a la vista
-      const c = r.confidence;
+      // 2) Calidad de datos y muestra del jugador son dos señales distintas.
+      const c = r.dataQuality;
       const confBlock = el('div', {style:'padding-top:8px;border-top:1px solid var(--border);'}, [
-        el('div', {text:`${c.label.emoji} Confianza ${c.label.text.toLowerCase()} (${c.score}%)`, style:`font-size:12.5px;font-weight:700;color:var(--ink);`}),
-        el('div', {text: c.missingCritical ? 'Falta información en una categoría de alto peso — esto limita la confianza aunque el resto de los datos sea bueno.' : 'Evalúa cobertura de datos, tamaño del grupo de comparación y consistencia entre las categorías más importantes.', style:'font-size:10px;color:var(--ink-faint);margin-top:3px;line-height:1.5;'}),
+        el('div', {text:`${c.label.emoji} Calidad de datos: ${c.label.text}`, style:`font-size:12.5px;font-weight:700;color:var(--ink);`}),
+        el('div', {text: c.missingCritical ? 'Falta información en una categoría de alto peso.' : (c.label.key === 'baja' ? 'Cobertura de datos insuficiente.' : 'Cobertura de datos adecuada.'), style:'font-size:10px;color:var(--ink-faint);margin-top:3px;line-height:1.5;'}),
       ]);
       const factorsRow = el('div', {style:'display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;'}, [
         el('span', {text:`Cobertura de datos: ${c.coveragePct}%`, style:'font-size:9.5px;color:var(--ink-faint);'}),
-        el('span', {text:`Tamaño de muestra: ${c.sampleScore}%`, style:'font-size:9.5px;color:var(--ink-faint);'}),
-        el('span', {text:`Consistencia: ${c.consistencyScore}%`, style:'font-size:9.5px;color:var(--ink-faint);'}),
+        el('span', {text:`Universo comparado: ${c.groupSize} jugadores`, style:'font-size:9.5px;color:var(--ink-faint);'}),
+        el('span', {text:`Muestra: ${r.sample.minutes === null ? 'sin dato' : Math.round(r.sample.minutes) + ' min'} · ${r.sample.text}`, style:`font-size:9.5px;color:${r.sample.color};font-weight:700;`}),
       ]);
       confBlock.appendChild(factorsRow);
+      if(!c.hasContextFilter){
+        confBlock.appendChild(el('div', {text:'Contexto: comparando contra toda la tabla cargada, sin filtro de posición/minutos — si mezcla perfiles muy distintos, los percentiles pueden ser menos representativos.', style:'font-size:9.5px;color:var(--ink-faint);margin-top:4px;line-height:1.5;'}));
+      }
       detail.appendChild(confBlock);
 
-      // 3) Fortalezas / Limitaciones (mismo dato que el desglose de abajo,
-      // resumido en las categorías más fuertes/débiles). Solo si hay
-      // categorías suficientes como para que la diferencia diga algo.
+      // 3) Aportes ponderados: explica el Fit con la misma lógica usada
+      // para calcularlo (peso × diferencia contra el percentil 50).
       const withData = r.breakdown.filter(b => b.avgPct !== null);
-      if(withData.length >= 4){
-        const drivers = withData.filter(b => b.avgPct >= 65).sort((a,b) => b.avgPct - a.avgPct).slice(0, 3);
-        const limiters = withData.filter(b => b.avgPct <= 40).sort((a,b) => a.avgPct - b.avgPct).slice(0, 3);
+      if(withData.length >= 2){
+        const drivers = withData.filter(b => b.contribution > 0).sort((a,b) => b.contribution - a.contribution).slice(0, 3);
+        const limiters = withData.filter(b => b.contribution < 0).sort((a,b) => a.contribution - b.contribution).slice(0, 3);
         if(drivers.length || limiters.length){
           const dl = el('div', {style:'display:flex;gap:18px;flex-wrap:wrap;padding:8px 0;border-top:1px solid var(--border);'});
           if(drivers.length){
             dl.appendChild(el('div', {style:'min-width:160px;'}, [
               el('div', {text:'Impulsan', style:'font-size:10px;font-weight:700;color:var(--green);margin-bottom:4px;'}),
-              ...drivers.map(b => el('div', {text:`${b.name}: ${Math.round(b.avgPct)}%`, style:'font-size:10.5px;color:var(--ink-dim);line-height:1.6;'})),
+              ...drivers.map(b => el('div', {text:`${b.name}: +${Math.abs(b.contribution).toFixed(1)} pts · ${Math.round(b.avgPct)}%`, style:'font-size:10.5px;color:var(--ink-dim);line-height:1.6;'})),
             ]));
           }
           if(limiters.length){
             dl.appendChild(el('div', {style:'min-width:160px;'}, [
               el('div', {text:'Limitan', style:'font-size:10px;font-weight:700;color:var(--red);margin-bottom:4px;'}),
-              ...limiters.map(b => el('div', {text:`${b.name}: ${Math.round(b.avgPct)}%`, style:'font-size:10.5px;color:var(--ink-dim);line-height:1.6;'})),
+              ...limiters.map(b => el('div', {text:`${b.name}: −${Math.abs(b.contribution).toFixed(1)} pts · ${Math.round(b.avgPct)}%`, style:'font-size:10.5px;color:var(--ink-dim);line-height:1.6;'})),
             ]));
           }
           detail.appendChild(dl);
@@ -394,7 +622,37 @@ export function renderProfileView(){
         ...checklist.map(item => el('div', {text:`· ${item}`, style:'font-size:10.5px;color:var(--ink-dim);line-height:1.6;'})),
       ]));
 
-      // 5) Desglose completo, categoría por categoría
+      // 5) Decisión humana y checklist de video. Al guardar una observación
+      // el jugador entra automáticamente al seguimiento persistente.
+      const existingScout = getShortlistItem(r.ref);
+      const scoutBlock = el('div', {style:'padding-top:8px;border-top:1px solid var(--border);'});
+      scoutBlock.appendChild(el('div', {text:'Decisión del scout', style:'font-size:11px;font-weight:700;color:var(--gold);margin-bottom:6px;'}));
+      const ensureScoutItem = () => getShortlistItem(r.ref) || upsertShortlist(r.ref, shortlistSnapshot(r));
+      const scoutFields = el('div', {style:'display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:7px;'});
+      const evaluator = el('input', {type:'text', value:existingScout?.evaluator || '', placeholder:'Evaluador', style:'font-size:11px;padding:7px;'});
+      const date = el('input', {type:'date', value:existingScout?.evaluationDate || new Date().toISOString().slice(0,10), style:'font-size:11px;padding:7px;'});
+      const conclusion = el('select', {style:'font-size:11px;padding:7px;'});
+      ['', 'Positiva', 'Neutra', 'Negativa', 'No evaluada'].forEach(v => conclusion.appendChild(el('option', {value:v, text:v || 'Conclusión', selected:(existingScout?.conclusion || '')===v})));
+      evaluator.addEventListener('change', e=>{ const item=ensureScoutItem(); updateShortlistItem(item.key,{evaluator:e.target.value}); });
+      date.addEventListener('change', e=>{ const item=ensureScoutItem(); updateShortlistItem(item.key,{evaluationDate:e.target.value}); });
+      conclusion.addEventListener('change', e=>{ const item=ensureScoutItem(); updateShortlistItem(item.key,{conclusion:e.target.value}); });
+      scoutFields.append(evaluator, date, conclusion);
+      scoutBlock.appendChild(scoutFields);
+      const note = el('textarea', {placeholder:'Nota de scout / evidencia de video…', style:'width:100%;min-height:58px;margin-top:7px;background:#0D1220;border:1px solid var(--border);border-radius:7px;color:var(--ink);padding:8px;font-family:var(--font-body);font-size:11px;resize:vertical;'});
+      note.value = existingScout?.note || '';
+      note.addEventListener('change', e=>{ const item=ensureScoutItem(); updateShortlistItem(item.key,{note:e.target.value}); });
+      scoutBlock.appendChild(note);
+      const checks = el('div', {style:'display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px;margin-top:8px;'});
+      checklist.forEach(itemLabel => {
+        const sel = el('select', {style:'font-size:10.5px;padding:6px 7px;'});
+        ['no evaluada','positiva','neutra','negativa'].forEach(v => sel.appendChild(el('option', {value:v, text:`${itemLabel}: ${v}`, selected:(existingScout?.videoChecks || {})[itemLabel]===v})));
+        sel.addEventListener('change', e=>{ const item=ensureScoutItem(); updateShortlistItem(item.key,{videoChecks:{...(item.videoChecks || {}), [itemLabel]:e.target.value}}); });
+        checks.appendChild(sel);
+      });
+      scoutBlock.appendChild(checks);
+      detail.appendChild(scoutBlock);
+
+      // 6) Desglose completo, categoría por categoría
       const fullBreakdown = el('div', {style:'display:flex;flex-direction:column;gap:7px;padding-top:8px;border-top:1px solid var(--border);'});
       r.breakdown.forEach(b => {
         const hasData = b.avgPct !== null;
