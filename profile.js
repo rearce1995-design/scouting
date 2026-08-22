@@ -19,7 +19,7 @@
 import {
   state, el, groupRows, numVal, computePercentile, fmtVal, playerLabel,
   renderMain, bucketColor, applyPreset, comparisonContextLabel, isShortlisted,
-  getShortlistItem, upsertShortlist, updateShortlistItem, selectPlayerForWheel,
+  getShortlistItem, upsertShortlist, updateShortlistItem, removeShortlistItem, selectPlayerForWheel,
 } from './app.js';
 import { PRESETS } from './presets.js';
 
@@ -326,6 +326,30 @@ function shortlistSnapshot(r){
   };
 }
 
+/* El ranking tiene su propio scroll interno. Al reconstruir la vista (por
+   seguir/quitar o abrir una ficha), renderMain conserva el scroll principal,
+   pero no el de esta mesa. Lo restauramos para que trabajar jugadores del
+   fondo no implique volver arriba cada vez. */
+function rerenderRankingKeepingScroll(){
+  const previousTop = document.getElementById('profile-ranking-list')?.scrollTop || 0;
+  renderMain();
+  const restore = () => {
+    const refreshed = document.getElementById('profile-ranking-list');
+    if(refreshed) refreshed.scrollTop = previousTop;
+  };
+  if(typeof requestAnimationFrame === 'function') requestAnimationFrame(restore);
+  else setTimeout(restore, 0);
+}
+
+/* El mismo botón funciona como interruptor: permite deshacer un seguimiento
+   por error sin obligar al scout a entrar en otra pestaña ni confirmar nada. */
+function toggleShortlist(row, snapshot){
+  const existing = getShortlistItem(row);
+  if(existing) removeShortlistItem(existing.key);
+  else upsertShortlist(row, snapshot);
+  rerenderRankingKeepingScroll();
+}
+
 export function renderProfileView(){
   const wrap = el('div', {class:'fade-in', style:'width:100%;max-width:1100px;display:flex;flex-direction:column;gap:10px;align-items:center;'});
 
@@ -498,7 +522,7 @@ export function renderProfileView(){
     if(filters.shortlisted==='yes' && !isShortlisted(r.ref)) return false;
     return true;
   });
-  const list = el('div', {style:'display:flex;flex-direction:column;gap:4px;max-height:640px;overflow:auto;'});
+  const list = el('div', {id:'profile-ranking-list', style:'display:flex;flex-direction:column;gap:4px;max-height:640px;overflow:auto;'});
   const colHead = el('div', {style:'display:grid;grid-template-columns:30px 1fr 80px 130px 125px 100px;gap:8px;padding:0 10px 4px;flex-shrink:0;'}, [
     el('span', {}),
     el('span', {}),
@@ -521,7 +545,7 @@ export function renderProfileView(){
         const sel = window.getSelection();
         if(sel && sel.toString().length > 0) return; // estaba seleccionando texto para copiar, no togglear
         state.profileExpanded = isExpanded ? null : r.ref;
-        renderMain();
+        rerenderRankingKeepingScroll();
       },
     }, [
       el('span', {text:'#' + (i + 1), style:'font-family:var(--font-mono);font-size:11px;color:var(--ink-faint);'}),
@@ -540,7 +564,17 @@ export function renderProfileView(){
       el('span', {text: `${fLabel.emoji} ${scoreRounded}%`, style:`font-family:var(--font-mono);font-weight:700;font-size:12px;color:${bucketColor(scoreRounded)};text-align:right;white-space:nowrap;`}),
       el('span', {text: `${r.dataQuality.label.emoji} ${r.dataQuality.label.text} · ${r.sample.minutes === null ? '—' : Math.round(r.sample.minutes)+' min'} ${r.sample.text}`, style:'font-size:10px;color:var(--ink-dim);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'}),
       el('span', {text: `${r.priority.emoji} ${r.priority.text}`, style:'font-size:11px;color:var(--ink-dim);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'}),
-      el('button', {class:'btn btn-sm', text:isShortlisted(r.ref) ? '✓ Seguimiento' : '☆ Seguir', style:'font-size:10px;padding:4px 6px;', onclick:(e)=>{ e.stopPropagation(); upsertShortlist(r.ref, shortlistSnapshot(r)); renderMain(); }}),
+      (() => {
+        const followed = isShortlisted(r.ref);
+        return el('button', {
+          class:'btn btn-sm',
+          text:followed ? '✓ Siguiendo' : '☆ Seguir',
+          title:followed ? 'Clic para quitar de seguimiento' : 'Añadir a seguimiento',
+          'aria-pressed':followed ? 'true' : 'false',
+          style:`font-size:10px;padding:4px 6px;${followed ? 'color:var(--gold);border-color:var(--gold);background:var(--gold-soft);' : ''}`,
+          onclick:(e)=>{ e.stopPropagation(); toggleShortlist(r.ref, shortlistSnapshot(r)); },
+        });
+      })(),
     ]);
     rowBox.appendChild(header);
 
@@ -559,7 +593,15 @@ export function renderProfileView(){
           el('span', {text:r.priority.text, style:'font-size:11px;color:var(--ink);font-weight:700;'}),
         ]),
         el('div', {style:'display:flex;gap:6px;'}, [
-          el('button', {class:'btn btn-sm', text:isShortlisted(r.ref) ? '✓ En seguimiento' : 'Añadir a video', onclick:()=>{ upsertShortlist(r.ref, {...shortlistSnapshot(r), status:'Ver video'}); renderMain(); }}),
+          (() => {
+            const followed = isShortlisted(r.ref);
+            return el('button', {
+              class:'btn btn-sm', text:followed ? '✓ Siguiendo · Quitar' : 'Añadir a video',
+              title:followed ? 'Quitar de seguimiento' : 'Añadir con estado Ver video',
+              style:followed ? 'color:var(--gold);border-color:var(--gold);background:var(--gold-soft);' : '',
+              onclick:()=>toggleShortlist(r.ref, {...shortlistSnapshot(r), status:'Ver video'}),
+            });
+          })(),
           el('button', {class:'btn btn-sm', text:'Abrir rueda completa', onclick:()=>selectPlayerForWheel(r.ref)}),
         ]),
       ]);

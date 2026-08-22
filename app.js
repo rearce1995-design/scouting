@@ -1400,8 +1400,10 @@ function renderMain(){
   headerRow.appendChild(flagBlock);
   card.appendChild(headerRow);
   const shortlistAction = el('div', {class:'no-print', style:'display:flex;justify-content:flex-end;margin:-4px 4px 8px;'}, [
-    el('button', {class:'btn btn-sm', text: isShortlisted(state.selectedRow) ? '✓ En seguimiento' : '☆ Añadir a seguimiento', onclick:()=>{
-      upsertShortlist(state.selectedRow, { profile: [state.presetUI.position, state.presetUI.role].filter(Boolean).join(' · ') });
+    el('button', {class:'btn btn-sm', text: isShortlisted(state.selectedRow) ? '✓ Siguiendo · Quitar' : '☆ Añadir a seguimiento', title:isShortlisted(state.selectedRow) ? 'Quitar de seguimiento' : 'Añadir a seguimiento', onclick:()=>{
+      const existing = getShortlistItem(state.selectedRow);
+      if(existing) removeShortlistItem(existing.key);
+      else upsertShortlist(state.selectedRow, { profile: [state.presetUI.position, state.presetUI.role].filter(Boolean).join(' · ') });
       renderMain();
     }}),
   ]);
