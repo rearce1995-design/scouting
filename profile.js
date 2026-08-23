@@ -659,10 +659,10 @@ export function renderProfileView(){
           (() => {
             const followed = isShortlisted(r.ref);
             return el('button', {
-              class:'btn btn-sm', text:followed ? '★ En seguimiento · Quitar' : 'Añadir a video',
-              title:followed ? 'Quitar de seguimiento' : 'Añadir con estado Ver video',
+              class:'btn btn-sm', text:followed ? '★ En seguimiento · Quitar' : 'Añadir a seguimiento',
+              title:followed ? 'Quitar de seguimiento' : 'Añadir con estado Pendiente',
               style:followed ? 'color:var(--gold);border-color:var(--gold);background:var(--gold-soft);' : '',
-              onclick:()=>toggleShortlist(r.ref, {...shortlistSnapshot(r), status:'Ver video'}),
+              onclick:()=>toggleShortlist(r.ref, {...shortlistSnapshot(r), status:'Pendiente'}),
             });
           })(),
           el('button', {class:'btn btn-sm', text:'Abrir rueda completa', onclick:()=>selectPlayerForWheel(r.ref)}),

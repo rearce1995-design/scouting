@@ -88,9 +88,12 @@ const state = {
   profileFilters: { priority:'', ageMin:'', ageMax:'', minutesMin:'', minutesMax:'', club:'', foot:'', nationality:'', shortlisted:'' },
   profileColumns: { age:true, minutes:true, club:true, foot:false, nationality:false, shortlisted:true },
   shortlistView: 'table',   // 'table' | 'kanban'
+  shortlistId: null,        // lista de seguimiento vinculada al Excel activo
 };
 
 const SHORTLIST_STORAGE_KEY = 'ruedaPercentiles_shortlist_v1';
+const SHORTLISTS_STORAGE_KEY = 'ruedaPercentiles_shortlists_v2';
+const SHORTLIST_STATES = ['Pendiente', 'Descartado', 'Prioridad baja', 'Prioridad media', 'Prioridad alta', 'Prioridad máxima'];
 
 let catSeq = 0, metSeq = 0;
 const uid = (p) => p + '_' + (Date.now().toString(36)) + Math.random().toString(36).slice(2,7);
@@ -259,15 +262,109 @@ function shortlistKey(row){
   return [state.playerCol ? row[state.playerCol] : '', state.teamCol ? row[state.teamCol] : '', state.ageCol ? row[state.ageCol] : '']
     .map(v => String(v ?? '').trim().toLowerCase()).join('|');
 }
-function loadShortlist(){
+function safeListName(value){
+  return String(value || 'Seguimiento sin nombre').trim().replace(/\s+/g, ' ').slice(0, 80) || 'Seguimiento sin nombre';
+}
+function normalizeShortlistStatus(status, item={}){
+  if(SHORTLIST_STATES.includes(status)) return status;
+  // Los estados anteriores se traducen sin borrar el seguimiento: lo que ya
+  // estaba recomendado queda arriba; el resto vuelve a pendiente de decisión.
+  if(status === 'Recomendado') return 'Prioridad máxima';
+  if(['Ver video', 'Evaluado'].includes(status)) return 'Pendiente';
+  if(['Prioridad alta', 'Prioridad media', 'Prioridad baja'].includes(item.priority)) return item.priority;
+  return 'Pendiente';
+}
+function migrateShortlistStatuses(store){
+  let changed = false;
+  Object.values(store.lists || {}).forEach(list => {
+    if(!Array.isArray(list.items)) { list.items = []; changed = true; return; }
+    list.items.forEach(item => {
+      const next = normalizeShortlistStatus(item.status, item);
+      if(item.status !== next){ item.status = next; changed = true; }
+    });
+  });
+  if(changed) try{ localStorage.setItem(SHORTLISTS_STORAGE_KEY, JSON.stringify(store)); }catch(e){}
+  return store;
+}
+function fileShortlistId(file){
+  // Mismo archivo = misma lista incluso después de recargar la página.
+  const source = `${file?.name || ''}|${file?.size || 0}|${file?.lastModified || 0}`;
+  let hash = 2166136261;
+  for(let i=0; i<source.length; i++) hash = Math.imul(hash ^ source.charCodeAt(i), 16777619);
+  return `archivo_${(hash >>> 0).toString(36)}`;
+}
+function nameFromFile(file){
+  const raw = String(file?.name || 'Seguimiento').replace(/\.[^.]+$/, '');
+  return safeListName(raw);
+}
+function loadShortlistStore(){
   try{
-    const value = JSON.parse(localStorage.getItem(SHORTLIST_STORAGE_KEY) || '[]');
-    return Array.isArray(value) ? value : [];
-  }catch(e){ return []; }
+    const parsed = JSON.parse(localStorage.getItem(SHORTLISTS_STORAGE_KEY) || 'null');
+    if(parsed && parsed.lists && typeof parsed.lists === 'object') return migrateShortlistStatuses(parsed);
+  }catch(e){ /* se reconstruye abajo */ }
+  // Migración sin pérdida: el seguimiento previo queda disponible como una
+  // lista histórica, separado de los nuevos Excels.
+  let legacy = [];
+  try{
+    const parsedLegacy = JSON.parse(localStorage.getItem(SHORTLIST_STORAGE_KEY) || '[]');
+    legacy = Array.isArray(parsedLegacy) ? parsedLegacy : [];
+  }catch(e){ legacy = []; }
+  const legacyId = 'historial_anterior';
+  const store = {
+    activeId: legacyId,
+    lists: {
+      [legacyId]: { id:legacyId, name:'Seguimiento anterior', sourceName:'Datos previos', items:legacy, createdAt:new Date().toISOString(), updatedAt:new Date().toISOString() },
+    },
+  };
+  try{ localStorage.setItem(SHORTLISTS_STORAGE_KEY, JSON.stringify(store)); }catch(e){}
+  return migrateShortlistStatuses(store);
+}
+function saveShortlistStore(store){
+  try{ localStorage.setItem(SHORTLISTS_STORAGE_KEY, JSON.stringify(store)); return true; }
+  catch(e){ alert('No se pudo guardar el seguimiento en este navegador.'); return false; }
+}
+function activeShortlist(store=loadShortlistStore()){
+  const id = state.shortlistId || store.activeId || 'historial_anterior';
+  const list = store.lists[id] || store.lists[store.activeId] || Object.values(store.lists)[0];
+  if(list) state.shortlistId = list.id;
+  return list || null;
+}
+function loadShortlist(){
+  return activeShortlist()?.items || [];
 }
 function saveShortlist(items){
-  try{ localStorage.setItem(SHORTLIST_STORAGE_KEY, JSON.stringify(items)); return true; }
-  catch(e){ alert('No se pudo guardar el seguimiento en este navegador.'); return false; }
+  const store = loadShortlistStore();
+  const list = activeShortlist(store);
+  if(!list) return false;
+  list.items = Array.isArray(items) ? items : [];
+  list.updatedAt = new Date().toISOString();
+  store.activeId = list.id;
+  return saveShortlistStore(store);
+}
+function activateShortlistForFile(file){
+  const store = loadShortlistStore();
+  const id = fileShortlistId(file);
+  if(!store.lists[id]){
+    const now = new Date().toISOString();
+    store.lists[id] = { id, name:nameFromFile(file), sourceName:file?.name || 'Excel', items:[], createdAt:now, updatedAt:now };
+  }
+  store.activeId = id;
+  state.shortlistId = id;
+  saveShortlistStore(store);
+  return store.lists[id];
+}
+function currentShortlistInfo(){
+  const list = activeShortlist();
+  return list ? { id:list.id, name:list.name, sourceName:list.sourceName, createdAt:list.createdAt } : {id:'',name:'Seguimiento',sourceName:''};
+}
+function renameCurrentShortlist(name){
+  const store = loadShortlistStore();
+  const list = activeShortlist(store);
+  if(!list) return null;
+  list.name = safeListName(name);
+  list.updatedAt = new Date().toISOString();
+  saveShortlistStore(store);
+  return list;
 }
 function isShortlisted(row){ return loadShortlist().some(item => item.key === shortlistKey(row)); }
 function getShortlistItem(row){ return loadShortlist().find(item => item.key === shortlistKey(row)) || null; }
@@ -287,7 +384,7 @@ function upsertShortlist(row, snapshot={}){
     nationality: resolveCountryName(row),
     addedAt: existing.addedAt || new Date().toISOString(),
     updatedAt: new Date().toISOString(),
-    status: snapshot.status || existing.status || 'Pendiente', note: snapshot.note ?? existing.note ?? '', evaluator: snapshot.evaluator ?? existing.evaluator ?? '',
+    status: normalizeShortlistStatus(snapshot.status || existing.status, existing), note: snapshot.note ?? existing.note ?? '', evaluator: snapshot.evaluator ?? existing.evaluator ?? '',
     conclusion: snapshot.conclusion ?? existing.conclusion ?? '',
     evaluationDate: snapshot.evaluationDate ?? existing.evaluationDate ?? '',
     videoChecks: snapshot.videoChecks ?? existing.videoChecks ?? {},
@@ -513,6 +610,7 @@ async function handleFile(file){
   try{
     const json = await parseWorkbookFile(file);
     await ingestRows(json);
+    activateShortlistForFile(file);
     state.filters = [];
     state.selectedRow = null;
     state.activeRanking = null;
@@ -1881,6 +1979,6 @@ document.addEventListener('DOMContentLoaded', refreshAll);
 export {
   state, el, opt, sortedRowsForPicker, playerLabel, titleForRow, resolveCountryName,
   groupRows, comparisonContextLabel, numVal, computePercentile, fmtVal, renderWheelSVG, renderMain, ordinal, bucketColor,
-  applyPreset, shortlistKey, loadShortlist, isShortlisted, getShortlistItem, upsertShortlist, updateShortlistItem, removeShortlistItem,
+  applyPreset, shortlistKey, loadShortlist, currentShortlistInfo, renameCurrentShortlist, isShortlisted, getShortlistItem, upsertShortlist, updateShortlistItem, removeShortlistItem,
   selectPlayerForWheel,
 };

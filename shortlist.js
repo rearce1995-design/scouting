@@ -2,10 +2,10 @@
    decisión de scouting. Vive en localStorage para no requerir backend. */
 import {
   state, el, loadShortlist, updateShortlistItem, removeShortlistItem,
-  selectPlayerForWheel, renderMain,
+  selectPlayerForWheel, renderMain, currentShortlistInfo, renameCurrentShortlist,
 } from './app.js';
 
-const STATES = ['Pendiente', 'Ver video', 'Evaluado', 'Recomendado', 'Descartado'];
+const STATES = ['Pendiente', 'Descartado', 'Prioridad baja', 'Prioridad media', 'Prioridad alta', 'Prioridad máxima'];
 
 function fmtDate(iso){
   if(!iso) return '—';
@@ -13,7 +13,11 @@ function fmtDate(iso){
   return isNaN(d) ? '—' : d.toLocaleDateString('es-AR');
 }
 function stateColor(status){
-  return ({'Pendiente':'var(--amber)', 'Ver video':'var(--blue)', 'Evaluado':'var(--gold)', 'Recomendado':'var(--green)', 'Descartado':'var(--red)'})[status] || 'var(--ink-dim)';
+  return ({
+    'Pendiente':'var(--amber)', 'Descartado':'var(--red)',
+    'Prioridad baja':'var(--red)', 'Prioridad media':'var(--amber)',
+    'Prioridad alta':'var(--green)', 'Prioridad máxima':'var(--gold)',
+  })[status] || 'var(--ink-dim)';
 }
 function sortByFit(items){
   return [...items].sort((a, b) => {
@@ -60,7 +64,7 @@ function renderKanbanBoard(){
     const cards = all.filter(({item}) => (item.status || 'Pendiente') === statusName);
     const column = el('section', {style:`min-height:280px;border:1px solid ${stateColor(statusName)};border-radius:10px;background:#0D1220;overflow:hidden;`});
     column.appendChild(el('div', {style:`display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 11px;background:${stateColor(statusName)}22;border-bottom:1px solid ${stateColor(statusName)}55;`}, [
-      el('span', {text:statusName, style:`font-size:12px;font-weight:700;color:${stateColor(statusName)};`} ),
+      el('span', {text:statusName.toUpperCase(), style:`font-size:12px;font-weight:700;color:${stateColor(statusName)};`} ),
       el('span', {text:String(cards.length), style:'font-family:var(--font-mono);font-size:11px;color:var(--ink-dim);'}),
     ]));
     const stack = el('div', {style:'display:flex;flex-direction:column;gap:8px;padding:8px;'});
@@ -80,7 +84,7 @@ function renderKanbanBoard(){
         el('span', {text:item.minutes === null || item.minutes === undefined ? '— min' : `${Math.round(item.minutes)} min`, style:'font-size:10px;color:var(--ink-dim);'}),
       ]));
       const hasMatchesWatched = item.matchesWatched !== null && item.matchesWatched !== undefined && item.matchesWatched !== '';
-      if(hasMatchesWatched || item.rivals) card.appendChild(el('div', {text:`Video: ${hasMatchesWatched ? item.matchesWatched + ' partidos' : '—'}${item.rivals ? ' · ' + item.rivals : ''}`, style:'font-size:10px;color:var(--ink-dim);line-height:1.4;margin:-2px 0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'}));
+      if(hasMatchesWatched || item.rivals) card.appendChild(el('div', {text:`Observación: ${hasMatchesWatched ? item.matchesWatched + ' partidos' : '—'}${item.rivals ? ' · ' + item.rivals : ''}`, style:'font-size:10px;color:var(--ink-dim);line-height:1.4;margin:-2px 0 8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'}));
       const status = el('select', {style:`width:100%;padding:6px 7px;font-size:10.5px;color:${stateColor(item.status)};border-color:${stateColor(item.status)};`});
       STATES.forEach(s => status.appendChild(el('option', {value:s, text:s, selected:item.status===s})));
       status.addEventListener('change', e => { updateShortlistItem(item.key, {status:e.target.value}); renderMain(); });
@@ -130,15 +134,26 @@ function exportShortlistToExcel(){
   const workbook = window.XLSX.utils.book_new();
   window.XLSX.utils.book_append_sheet(workbook, sheet, 'Seguimiento');
   const stamp = new Date().toISOString().slice(0,10);
-  window.XLSX.writeFile(workbook, `seguimiento_scouting_${stamp}.xlsx`);
+  const listSlug = currentShortlistInfo().name
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'seguimiento';
+  window.XLSX.writeFile(workbook, `${listSlug}_${stamp}.xlsx`);
 }
 
 export function renderShortlistView(){
   const wrap = el('div', {class:'fade-in', style:'width:100%;max-width:1400px;display:flex;flex-direction:column;gap:10px;'});
   const items = sortByFit(loadShortlist());
+  const listInfo = currentShortlistInfo();
+  const listName = el('input', {type:'text', value:listInfo.name, placeholder:'Nombre de la lista', title:'Nombre de esta lista de seguimiento', style:'width:min(300px,100%);font-size:12px;padding:8px 9px;'});
+  listName.addEventListener('change', e => { renameCurrentShortlist(e.target.value); renderMain(); });
   wrap.appendChild(el('div', {style:'background:var(--panel-2);border:1px solid var(--border);border-radius:14px;padding:16px 20px;'}, [
-    el('div', {text:`Seguimiento (${items.length})`, style:'font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--ink);'}),
-    el('div', {text:'Decisiones, video y observaciones guardadas en este navegador · ordenadas por Fit.', style:'font-size:11px;color:var(--ink-faint);margin-top:4px;'}),
+    el('div', {style:'display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;'}, [
+      el('div', {}, [
+        el('div', {text:`Seguimiento · ${listInfo.name} (${items.length})`, style:'font-family:var(--font-display);font-size:16px;font-weight:700;color:var(--ink);'}),
+        el('div', {text:`Lista vinculada a: ${listInfo.sourceName || 'datos actuales'} · ordenada por Fit.`, style:'font-size:11px;color:var(--ink-faint);margin-top:4px;'}),
+      ]),
+      el('label', {style:'display:flex;flex-direction:column;gap:4px;font-size:10px;color:var(--ink-faint);min-width:220px;'}, [el('span', {text:'NOMBRE DE LA LISTA'}), listName]),
+    ]),
   ]));
   if(!items.length){
     wrap.appendChild(el('div', {class:'helptext', text:'Todavía no hay jugadores en seguimiento. Podés añadirlos desde la rueda individual o desde el ranking de perfil.'}));
@@ -195,7 +210,7 @@ export function renderShortlistView(){
     onclick:()=>{ state.shortlistView=view; renderMain(); },
   });
   wrap.appendChild(el('div', {style:'display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:center;'}, [
-    el('div', {style:'display:flex;gap:6px;'}, [viewButton('table', 'Tabla'), viewButton('kanban', 'Kanban')]),
+    el('div', {style:'display:flex;gap:6px;'}, [viewButton('table', 'Tabla'), viewButton('kanban', 'Situación de scouting')]),
     el('div', {style:'display:flex;gap:8px;flex-wrap:wrap;'}, [
       state.shortlistView==='table' ? statusFilter : null,
       el('button', {class:'btn btn-gold', text:'Exportar Excel', onclick:exportShortlistToExcel}),
