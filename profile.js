@@ -133,8 +133,16 @@ const VIDEO_CHECKLIST_BY_POSITION = {
   'Delantero': ['Movimientos sin balón', 'Juego de espaldas / asociación', 'Finalización bajo presión'],
 };
 const VIDEO_CHECKLIST_DEFAULT = ['Comportamiento sin balón', 'Toma de decisiones bajo presión', 'Comunicación con compañeros'];
+const SAMPLE_TOOLTIP = 'Clasificación orientativa; la estabilidad varía según la frecuencia de la métrica.';
 function videoChecklist(){
   return VIDEO_CHECKLIST_BY_POSITION[state.presetUI.position] || VIDEO_CHECKLIST_DEFAULT;
+}
+
+function showScoutFeedback(message){
+  document.getElementById('scout-save-feedback')?.remove();
+  const toast = el('div', {id:'scout-save-feedback', text:message, role:'status', style:'position:fixed;right:22px;bottom:22px;z-index:200;padding:10px 13px;border-radius:8px;background:#163324;border:1px solid var(--green);color:#D8F5E4;font-size:12px;font-weight:700;box-shadow:0 10px 28px rgba(0,0,0,.35);'});
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 2600);
 }
 
 /* Categorías candidatas para el perfil: las que ya tienen métricas
@@ -617,13 +625,13 @@ export function renderProfileView(){
         })(),
       ]),
       el('span', {text: `${fLabel.emoji} ${scoreRounded}%`, style:`font-family:var(--font-mono);font-weight:700;font-size:12px;color:${bucketColor(scoreRounded)};text-align:right;white-space:nowrap;`}),
-      el('span', {text: `${r.dataQuality.label.emoji} ${r.dataQuality.label.text} · ${r.sample.minutes === null ? '—' : Math.round(r.sample.minutes)+' min'} ${r.sample.text}`, style:'font-size:10px;color:var(--ink-dim);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'}),
+      el('span', {text: `${r.dataQuality.label.emoji} ${r.dataQuality.label.text} · ${r.sample.minutes === null ? '—' : Math.round(r.sample.minutes)+' min'} ${r.sample.text} ⓘ`, title:SAMPLE_TOOLTIP, style:'font-size:10px;color:var(--ink-dim);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'}),
       el('span', {text: `${r.priority.emoji} ${r.priority.text}`, style:'font-size:11px;color:var(--ink-dim);text-align:right;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'}),
       (() => {
         const followed = isShortlisted(r.ref);
         return el('button', {
           class:'btn btn-sm',
-          text:followed ? '✓ Siguiendo' : '☆ Seguir',
+          text:followed ? '★ En seguimiento' : '☆ Seguir',
           title:followed ? 'Clic para quitar de seguimiento' : 'Añadir a seguimiento',
           'aria-pressed':followed ? 'true' : 'false',
           style:`font-size:10px;padding:4px 6px;${followed ? 'color:var(--gold);border-color:var(--gold);background:var(--gold-soft);' : ''}`,
@@ -643,7 +651,7 @@ export function renderProfileView(){
       const summaryCard = el('div', {style:'display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:11px 12px;background:#111927;border:1px solid var(--border);border-radius:9px;'}, [
         el('div', {style:'display:flex;gap:14px;flex-wrap:wrap;align-items:center;'}, [
           el('span', {text:`Fit ${scoreRounded}%`, style:`font-family:var(--font-mono);font-weight:700;color:${bucketColor(scoreRounded)};font-size:12px;`} ),
-          el('span', {text:`Muestra ${r.sample.minutes === null ? '—' : Math.round(r.sample.minutes) + ' min'} · ${r.sample.text}`, style:`font-size:11px;color:${r.sample.color};`} ),
+          el('span', {text:`Muestra ${r.sample.minutes === null ? '—' : Math.round(r.sample.minutes) + ' min'} · ${r.sample.text} ⓘ`, title:SAMPLE_TOOLTIP, style:`font-size:11px;color:${r.sample.color};cursor:help;`} ),
           el('span', {text:`${positives} fortalezas · ${alerts} alertas`, style:'font-size:11px;color:var(--ink-dim);'}),
           el('span', {text:r.priority.text, style:'font-size:11px;color:var(--ink);font-weight:700;'}),
         ]),
@@ -651,7 +659,7 @@ export function renderProfileView(){
           (() => {
             const followed = isShortlisted(r.ref);
             return el('button', {
-              class:'btn btn-sm', text:followed ? '✓ Siguiendo · Quitar' : 'Añadir a video',
+              class:'btn btn-sm', text:followed ? '★ En seguimiento · Quitar' : 'Añadir a video',
               title:followed ? 'Quitar de seguimiento' : 'Añadir con estado Ver video',
               style:followed ? 'color:var(--gold);border-color:var(--gold);background:var(--gold-soft);' : '',
               onclick:()=>toggleShortlist(r.ref, {...shortlistSnapshot(r), status:'Ver video'}),
@@ -678,7 +686,7 @@ export function renderProfileView(){
       const factorsRow = el('div', {style:'display:flex;gap:14px;flex-wrap:wrap;margin-top:6px;'}, [
         el('span', {text:`Cobertura de datos: ${c.coveragePct}%`, style:'font-size:9.5px;color:var(--ink-faint);'}),
         el('span', {text:`Universo comparado: ${c.groupSize} jugadores`, style:'font-size:9.5px;color:var(--ink-faint);'}),
-        el('span', {text:`Muestra: ${r.sample.minutes === null ? 'sin dato' : Math.round(r.sample.minutes) + ' min'} · ${r.sample.text}`, style:`font-size:9.5px;color:${r.sample.color};font-weight:700;`}),
+        el('span', {text:`Muestra: ${r.sample.minutes === null ? 'sin dato' : Math.round(r.sample.minutes) + ' min'} · ${r.sample.text} ⓘ`, title:SAMPLE_TOOLTIP, style:`font-size:9.5px;color:${r.sample.color};font-weight:700;cursor:help;`}),
       ]);
       confBlock.appendChild(factorsRow);
       if(!c.hasContextFilter){
@@ -724,16 +732,28 @@ export function renderProfileView(){
       const existingScout = getShortlistItem(r.ref);
       const scoutBlock = el('div', {style:'padding-top:8px;border-top:1px solid var(--border);'});
       scoutBlock.appendChild(el('div', {text:'Decisión del scout', style:'font-size:11px;font-weight:700;color:var(--gold);margin-bottom:6px;'}));
-      const ensureScoutItem = () => getShortlistItem(r.ref) || upsertShortlist(r.ref, shortlistSnapshot(r));
+      const ensureScoutItem = () => {
+        const existing = getShortlistItem(r.ref);
+        if(existing) return existing;
+        const added = upsertShortlist(r.ref, shortlistSnapshot(r));
+        showScoutFeedback('✓ Añadido a seguimiento');
+        // Refleja el nuevo estado en el botón sin perder el punto de trabajo.
+        setTimeout(rerenderRankingKeepingScroll, 0);
+        return added;
+      };
       const scoutFields = el('div', {style:'display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:7px;'});
       const evaluator = el('input', {type:'text', value:existingScout?.evaluator || '', placeholder:'Evaluador', style:'font-size:11px;padding:7px;'});
       const date = el('input', {type:'date', value:existingScout?.evaluationDate || new Date().toISOString().slice(0,10), style:'font-size:11px;padding:7px;'});
+      const matchesWatched = el('input', {type:'number', min:'0', step:'1', value:existingScout?.matchesWatched ?? '', placeholder:'Partidos vistos', title:'Cantidad de partidos vistos', style:'font-size:11px;padding:7px;'});
+      const rivals = el('input', {type:'text', value:existingScout?.rivals || '', placeholder:'Rivales vistos (ej. River, Boca)', title:'Rivales contra los que fue visto', style:'font-size:11px;padding:7px;'});
       const conclusion = el('select', {style:'font-size:11px;padding:7px;'});
       ['', 'Positiva', 'Neutra', 'Negativa', 'No evaluada'].forEach(v => conclusion.appendChild(el('option', {value:v, text:v || 'Conclusión', selected:(existingScout?.conclusion || '')===v})));
       evaluator.addEventListener('change', e=>{ const item=ensureScoutItem(); updateShortlistItem(item.key,{evaluator:e.target.value}); });
       date.addEventListener('change', e=>{ const item=ensureScoutItem(); updateShortlistItem(item.key,{evaluationDate:e.target.value}); });
+      matchesWatched.addEventListener('change', e=>{ const item=ensureScoutItem(); const raw=e.target.value.trim(); updateShortlistItem(item.key,{matchesWatched:raw==='' ? '' : Math.max(0,Math.round(Number(raw)||0))}); });
+      rivals.addEventListener('change', e=>{ const item=ensureScoutItem(); updateShortlistItem(item.key,{rivals:e.target.value}); });
       conclusion.addEventListener('change', e=>{ const item=ensureScoutItem(); updateShortlistItem(item.key,{conclusion:e.target.value}); });
-      scoutFields.append(evaluator, date, conclusion);
+      scoutFields.append(evaluator, date, matchesWatched, rivals, conclusion);
       scoutBlock.appendChild(scoutFields);
       const note = el('textarea', {placeholder:'Nota de scout / evidencia de video…', style:'width:100%;min-height:58px;margin-top:7px;background:#0D1220;border:1px solid var(--border);border-radius:7px;color:var(--ink);padding:8px;font-family:var(--font-body);font-size:11px;resize:vertical;'});
       note.value = existingScout?.note || '';

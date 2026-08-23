@@ -87,6 +87,7 @@ const state = {
   profileExpanded: null,    // fila del jugador con el desglose abierto en el ranking de perfil
   profileFilters: { priority:'', ageMin:'', ageMax:'', minutesMin:'', minutesMax:'', club:'', foot:'', nationality:'', shortlisted:'' },
   profileColumns: { age:true, minutes:true, club:true, foot:false, nationality:false, shortlisted:true },
+  shortlistView: 'table',   // 'table' | 'kanban'
 };
 
 const SHORTLIST_STORAGE_KEY = 'ruedaPercentiles_shortlist_v1';
@@ -1400,7 +1401,7 @@ function renderMain(){
   headerRow.appendChild(flagBlock);
   card.appendChild(headerRow);
   const shortlistAction = el('div', {class:'no-print', style:'display:flex;justify-content:flex-end;margin:-4px 4px 8px;'}, [
-    el('button', {class:'btn btn-sm', text: isShortlisted(state.selectedRow) ? '✓ Siguiendo · Quitar' : '☆ Añadir a seguimiento', title:isShortlisted(state.selectedRow) ? 'Quitar de seguimiento' : 'Añadir a seguimiento', onclick:()=>{
+    el('button', {class:'btn btn-sm', text: isShortlisted(state.selectedRow) ? '★ En seguimiento · Quitar' : '☆ Añadir a seguimiento', title:isShortlisted(state.selectedRow) ? 'Quitar de seguimiento' : 'Añadir a seguimiento', onclick:()=>{
       const existing = getShortlistItem(state.selectedRow);
       if(existing) removeShortlistItem(existing.key);
       else upsertShortlist(state.selectedRow, { profile: [state.presetUI.position, state.presetUI.role].filter(Boolean).join(' · ') });
