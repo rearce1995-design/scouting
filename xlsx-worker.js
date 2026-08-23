@@ -1,4 +1,5 @@
-importScripts('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js');
+// Misma copia local que usa la página: funciona offline y evita bloqueos de CDN.
+importScripts('./vendor/xlsx.full.min.js');
 
 onmessage = function(e){
   try{
