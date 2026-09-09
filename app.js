@@ -100,6 +100,86 @@ const uid = (p) => p + '_' + (Date.now().toString(36)) + Math.random().toString(
 
 /* ---------------------------- Utilities ---------------------- */
 
+// Wyscout cambia los encabezados al cambiar el idioma de descarga. Se
+// normalizan tildes, espacios y signos para que una configuración guardada
+// con una exportación en inglés pueda reutilizarse con su equivalente español.
+function normalizeColumnName(value){
+  return String(value || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+// Métricas que no intervienen en los presets, pero sí pueden formar parte de
+// una categoría personalizada guardada por el scout.
+const EXTRA_COLUMN_ALIAS_GROUPS = [
+  ['player', 'jugador', 'name', 'nombre'],
+  ['team', 'equipo', 'club'],
+  ['team within selected timeframe', 'equipo durante el período seleccionado'],
+  ['position', 'specific position', 'posición', 'posicion', 'posición específica', 'posicion especifica'],
+  ['age', 'edad'], ['minutes played', 'minutos jugados'], ['matches played', 'partidos jugados'],
+  ['birth country', 'país de nacimiento', 'pais de nacimiento'], ['passport country', 'passport', 'pasaporte'],
+  ['preferred foot', 'foot', 'pie'], ['market value', 'valor de mercado transfermarkt'],
+  ['contract expires', 'contract expiration', 'vencimiento contrato'], ['height', 'altura'], ['weight', 'peso'], ['on loan', 'en prestamo', 'en préstamo'],
+  ['duels per 90', 'duelos/90'], ['duels won, %', 'duelos ganados, %'],
+  ['yellow cards', 'tarjetas amarillas'], ['yellow cards per 90', 'tarjetas amarillas/90'],
+  ['red cards', 'tarjetas rojas'], ['red cards per 90', 'tarjetas rojas/90'],
+  ['successful attacking actions per 90', 'acciones de ataque exitosas/90'],
+  ['non-penalty goals', 'non penalty goals', 'goles excepto los penaltis'],
+  ['head goals', 'goles de cabeza'], ['shots', 'remates'],
+  ['assists', 'asistencias'], ['assists per 90', 'asistencias/90'], ['crosses from left flank per 90', 'centros desde la banda izquierda/90'],
+  ['accurate crosses from left flank, %', 'precisión centros desde la banda izquierda, %'],
+  ['crosses from right flank per 90', 'centros desde la banda derecha/90'],
+  ['accurate crosses from right flank, %', 'precisión centros desde la banda derecha, %'],
+  ['back passes per 90', 'pases hacia atrás/90'], ['accurate back passes, %', 'precisión pases hacia atrás, %', 'precision pases hacia atrás, %'],
+  ['accurate forward passes, %', 'precisión pases hacia adelante, %'],
+  ['lateral passes per 90', 'pases laterales/90'], ['accurate lateral passes, %', 'precisión pases laterales, %'],
+  ['short medium passes per 90', 'short / medium passes per 90', 'pases cortos / medios /90'],
+  ['accurate short medium passes, %', 'accurate short / medium passes, %', 'precisión pases cortos / medios, %'],
+  ['average pass length, m', 'longitud media pases, m'], ['average long pass length, m', 'longitud media pases largos, m'],
+  ['second assists per 90', 'second assists/90'], ['third assists per 90', 'third assists/90'],
+  ['accurate smart passes, %', 'precisión desmarques, %'],
+  ['accurate passes to final third, %', 'precisión pases en el último tercio, %'],
+  ['accurate passes to penalty area, %', 'pases hacía el área pequeña, %', 'pases hacia el área pequeña, %'],
+  ['accurate through passes, %', 'precisión pases en profundidad, %'],
+  ['deep completions per 90', 'ataque en profundidad/90'],
+  ['goals conceded', 'goles recibidos'], ['goals conceded per 90', 'goles recibidos/90'],
+  ['clean sheets per 90', 'porterías imbatidas en los 90'], ['xg against', 'xg en contra'], ['xg against per 90', 'xg en contra/90'],
+  ['back passes received by goalkeeper per 90', 'pases hacía atrás recibidos del arquero/90'],
+  ['free kicks per 90', 'tiros libres/90'], ['direct free kicks per 90', 'tiros libres directos/90'],
+  ['direct free kick conversion, %', 'tiros libres directos, %'], ['corners per 90', 'córneres/90', 'corneres/90'],
+  ['penalties taken', 'penaltis a favor'], ['penalty conversion, %', 'penaltis realizados, %'],
+];
+
+const COLUMN_ALIAS_GROUPS = [...Object.values(A), ...Object.values(PHYS), ...EXTRA_COLUMN_ALIAS_GROUPS];
+
+function resolveColumnFromHeaders(headers, requested, numericOnly = false){
+  if(!requested) return null;
+  const available = (numericOnly ? state.numericCols : headers).map(h => ({ h, key:normalizeColumnName(h) }));
+  const key = normalizeColumnName(requested);
+  if(!key) return null;
+  const direct = available.find(item => item.key === key);
+  if(direct) return direct.h;
+
+  const aliasGroup = COLUMN_ALIAS_GROUPS.find(group => group.some(alias => normalizeColumnName(alias) === key));
+  if(!aliasGroup) return null;
+  for(const alias of aliasGroup){
+    const hit = available.find(item => item.key === normalizeColumnName(alias));
+    if(hit) return hit.h;
+  }
+  return null;
+}
+
+function remapSavedColumns(){
+  const remap = (value, numeric = false) => resolveColumnFromHeaders(state.headers, value, numeric) || value;
+  ['playerCol', 'teamCol', 'posCol', 'minutesCol', 'footCol', 'ageCol', 'birthCol', 'passportCol', 'nationCol'].forEach(key => {
+    if(state[key]) state[key] = remap(state[key]);
+  });
+  state.filters.forEach(filter => { if(filter.col) filter.col = remap(filter.col); });
+  state.categories.forEach(category => category.metrics.forEach(metric => {
+    if(metric.col) metric.col = remap(metric.col, true);
+  }));
+}
+
 function debounce(fn, wait = 120){
   let t = 0;
   return (...args) => {
@@ -194,11 +274,12 @@ async function ingestRows(json){
   // prioridad declarada de los candidatos.
   const findCol = (candidates) => {
     for(const candidate of candidates){
-      const hit = state.headers.find(h => h.toLowerCase().trim() === candidate);
+      const hit = resolveColumnFromHeaders(state.headers, candidate);
       if(hit) return hit;
     }
     for(const candidate of candidates){
-      const hit = state.headers.find(h => h.toLowerCase().includes(candidate));
+      const candidateKey = normalizeColumnName(candidate);
+      const hit = state.headers.find(h => normalizeColumnName(h).includes(candidateKey));
       if(hit) return hit;
     }
     return undefined;
@@ -207,14 +288,15 @@ async function ingestRows(json){
   // En exportaciones Wyscout el campo "Team" puede quedar vacío para
   // jugadores de reserva, mientras que "Team within selected timeframe"
   // conserva el club observado. Priorizamos ese campo cuando está presente.
-  state.teamCol = findCol(['team within selected timeframe', 'team','equipo','club']) || state.teamCol;
-  state.posCol = findCol(['position','posición','posicion','pos']) || state.posCol;
-  state.minutesCol = findCol(['minutes played','minutos','minutes','mins']) || state.minutesCol;
+  state.teamCol = findCol(['team within selected timeframe', 'equipo durante el período seleccionado', 'team','equipo','club']) || state.teamCol;
+  state.posCol = findCol(['specific position', 'posición específica', 'position','posición','posicion','pos']) || state.posCol;
+  state.minutesCol = findCol(['minutes played','minutos jugados','minutos','minutes','mins']) || state.minutesCol;
   state.footCol = findCol(['foot', 'preferred foot', 'pie', 'pierna hábil', 'pierna habil']) || state.footCol;
   state.ageCol = findCol(['age','edad']) || state.ageCol;
   state.birthCol = findCol(['birth country', 'país de nacimiento']) || state.birthCol;
   state.passportCol = findCol(['passport country', 'nationality', 'nacionalidad']) || state.passportCol;
   state.nationCol = state.birthCol || state.passportCol; // alias legado, ya no se usa para resolver bandera
+  remapSavedColumns();
 }
 
 function numVal(row, col){
@@ -661,14 +743,14 @@ function refreshCount(){
 /* ---- Paso 3: categorías y métricas (el corazón de la herramienta) ---- */
 
 function findColumnByAliases(aliases){
-  const cols = state.numericCols.map(h => ({ h, l: h.toLowerCase() }));
+  const cols = state.numericCols.map(h => ({ h, l: normalizeColumnName(h) }));
   for(const alias of aliases){
-    const a = alias.toLowerCase();
+    const a = normalizeColumnName(alias);
     const hit = cols.find(x => x.l === a);
     if(hit) return hit.h;
   }
   for(const alias of aliases){
-    const a = alias.toLowerCase();
+    const a = normalizeColumnName(alias);
     const hit = cols.find(x => x.l.includes(a));
     if(hit) return hit.h;
   }
@@ -723,16 +805,16 @@ function applyPreset(preset, includePhysical){
    prioridad: la primera que matchea gana (por eso "offensive duels" va
    antes que el genérico "duels", etc.). */
 const METRIC_CATEGORY_RULES = [
-  { cat:'Portero', kws:['conceded goal','shots against','clean sheet','save rate','xg against','prevented goal','back passes received','exit','goalkeeper','gk '] },
-  { cat:'Balón parado', kws:['free kick','corner','penalties taken','penalty conversion'] },
-  { cat:'Físico', kws:['distance','speed','acceleration','deceleration','meter/min','sprint','hsr','high intensity',' hi '] },
-  { cat:'Pases clave', kws:['xa','shot assist','second assist','third assist','smart pass','key pass','final third','penalty area','through pass','deep completion','deep completed'] },
-  { cat:'Pases', kws:['pass','cross','progressive pass'] },
-  { cat:'Defensivo', kws:['defensive','aerial duel','sliding tackle','block','intercept','fouls per','yellow card','red card'] },
-  { cat:'Ataque', kws:['goal','xg','shot','dribble','offensive duel','touches in box','progressive run','assist','fouls suffered','attacking'] },
+  { cat:'Portero', kws:['conceded goal','goles recibidos','shots against','remates en contra','clean sheet','porterias imbatidas','save rate','paradas','xg against','xg en contra','prevented goal','goles evitados','back passes received','recibidos del arquero','exit','salidas','goalkeeper','gk '] },
+  { cat:'Balón parado', kws:['free kick','tiros libres','corner','corneres','penalties taken','penaltis a favor','penalty conversion','penaltis realizados'] },
+  { cat:'Físico', kws:['distance','speed','acceleration','aceleracion','deceleration','desaceleracion','meter min','sprint','hsr','high intensity',' hi '] },
+  { cat:'Pases clave', kws:['xa','shot assist','asistencias 90 1','second assist','third assist','smart pass','desmarques','key pass','jugadas claves','final third','ultimo tercio','penalty area','area de penalti','through pass','pases en profundidad','deep completion','deep completed','ataque en profundidad'] },
+  { cat:'Pases', kws:['pass','pases','cross','centros','progressive pass','pases progresivos'] },
+  { cat:'Defensivo', kws:['defensive','defensiv','aerial duel','duelos aereos','sliding tackle','entradas','block','tiros interceptados','intercept','fouls per','faltas 90','yellow card','tarjetas amarillas','red card','tarjetas rojas'] },
+  { cat:'Ataque', kws:['goal','goles','xg','shot','remates','dribble','regates','offensive duel','duelos atacantes','touches in box','toques en el area','progressive run','carreras en progresion','assist','asistencias','fouls suffered','faltas recibidas','attacking','ataque exitosas'] },
 ];
 function classifyMetricColumn(colName){
-  const c = String(colName || '').toLowerCase();
+  const c = normalizeColumnName(colName);
   for(const rule of METRIC_CATEGORY_RULES){
     if(rule.kws.some(k => c.includes(k))) return rule.cat;
   }
@@ -1955,6 +2037,10 @@ function importConfig(file){
           filters: cfg.filters || [], categories: cfg.categories || [], meta: cfg.meta || state.meta,
           presetUI: cfg.presetUI || state.presetUI, profile: cfg.profile || state.profile
         });
+        // Si la configuración se creó con el Excel en inglés, se sustituyen
+        // sus encabezados por los equivalentes disponibles en el archivo
+        // actual antes de redibujar filtros, categorías y el perfil.
+        remapSavedColumns();
         refreshAll();
         alert('Configuración cargada. Elegí el jugador y generá el gráfico.');
         return;

@@ -9,9 +9,9 @@ export function C(name, metrics, opts = {}) {
 }
 export function disciplineCat() {
   return C('Disciplina', [
-    M(['fouls per 90'], 'Faltas', { invert:true }),
-    M(['yellow cards per 90'], 'Amarillas', { invert:true }),
-    M(['red cards per 90'], 'Rojas', { invert:true }),
+    M(['fouls per 90', 'faltas/90'], 'Faltas', { invert:true }),
+    M(['yellow cards per 90', 'tarjetas amarillas/90'], 'Amarillas', { invert:true }),
+    M(['red cards per 90', 'tarjetas rojas/90'], 'Rojas', { invert:true }),
   ]);
 }
 export function withDiscipline(cats) { return [...cats, disciplineCat()]; }
@@ -19,58 +19,58 @@ export function withDiscipline(cats) { return [...cats, disciplineCat()]; }
 // Alias habituales de exportaciones Wyscout. Se incluyen variantes para
 // mantener compatibilidad con nombres de columna de distintas exportaciones.
 export const A = {
-  saveRate: ['save rate, %', 'save rate %', 'save rate'],
-  prevGoals: ['prevented goals per 90', 'goals prevented per 90', 'goals prevented'],
-  saves: ['saves per 90'], cleanSheets: ['clean sheets, %', 'clean sheets %'],
-  exits: ['exits per 90'], aerialDuels: ['aerial duels per 90'], aerialDuelsWon: ['aerial duels won, %', 'aerial duels won %'],
-  passes: ['passes per 90', 'passes'], accPasses: ['accurate passes, %', 'accurate passes %'],
-  longPasses: ['long passes per 90', 'long passes'], accLongPasses: ['accurate long passes, %', 'accurate long passes %'],
+  saveRate: ['save rate, %', 'save rate %', 'save rate', 'paradas, %'],
+  prevGoals: ['prevented goals per 90', 'goals prevented per 90', 'goals prevented', 'goles evitados/90', 'goles evitados'],
+  saves: ['saves per 90', 'paradas/90'], cleanSheets: ['clean sheets, %', 'clean sheets %', 'porterías imbatidas en los 90'],
+  exits: ['exits per 90', 'salidas/90'], aerialDuels: ['aerial duels per 90', 'duelos aéreos en los 90'], aerialDuelsWon: ['aerial duels won, %', 'aerial duels won %', 'duelos aéreos ganados, %'],
+  passes: ['passes per 90', 'passes', 'pases/90'], accPasses: ['accurate passes, %', 'accurate passes %', 'precisión pases, %'],
+  longPasses: ['long passes per 90', 'long passes', 'pases largos/90'], accLongPasses: ['accurate long passes, %', 'accurate long passes %', 'precisión pases largos, %'],
   // Wyscout no exporta "Recoveries" ni "Clearances" como columnas propias.
   // Se mantienen estos alias por si algún export externo sí las trae, pero
   // los presets ya no los usan por defecto (ver padjInterceptions / padjSlidingTackles).
   recoveries: ['recoveries per 90', 'recoveries'],
-  padjInterceptions: ['padj interceptions'],
-  padjSlidingTackles: ['padj sliding tackles'],
-  shotsAgainst: ['shots against per 90', 'shots against'],
-  cleanSheetsCount: ['clean sheets'],
+  padjInterceptions: ['padj interceptions', 'posesión conquistada después de una interceptación'],
+  padjSlidingTackles: ['padj sliding tackles', 'posesión conquistada después de una entrada'],
+  shotsAgainst: ['shots against per 90', 'shots against', 'remates en contra/90'],
+  cleanSheetsCount: ['clean sheets', 'porterías imbatidas en los 90'],
   defActionsOutsideArea: ['defensive actions outside area per 90', 'defensive actions outside area'],
-  progPasses: ['progressive passes per 90', 'progressive passes'], accProgPasses: ['accurate progressive passes, %', 'accurate progressive passes %'],
-  passesFinalThird: ['passes to final third per 90', 'passes to final third'],
-  forwardPasses: ['forward passes per 90', 'forward passes'],
-  smartPasses: ['smart passes per 90', 'smart passes'],
-  defDuels: ['defensive duels per 90', 'defensive duels'], defDuelsWon: ['defensive duels won, %', 'defensive duels won %'],
-  successfulDefActions: ['successful defensive actions per 90', 'successful defensive actions'],
+  progPasses: ['progressive passes per 90', 'progressive passes', 'pases progresivos/90'], accProgPasses: ['accurate progressive passes, %', 'accurate progressive passes %', 'precisión pases progresivos, %'],
+  passesFinalThird: ['passes to final third per 90', 'passes to final third', 'pases en el último tercio/90'],
+  forwardPasses: ['forward passes per 90', 'forward passes', 'pases hacia adelante/90'],
+  smartPasses: ['smart passes per 90', 'smart passes', 'desmarques/90'],
+  defDuels: ['defensive duels per 90', 'defensive duels', 'duelos defensivos/90'], defDuelsWon: ['defensive duels won, %', 'defensive duels won %', 'duelos defensivos ganados, %'],
+  successfulDefActions: ['successful defensive actions per 90', 'successful defensive actions', 'acciones defensivas realizadas/90'],
   // OJO: si el export no trae una columna "Defensive actions per 90" propia,
   // el fallback por substring de findColumnByAliases() puede matchear por
   // error "Successful defensive actions per 90". Preferir 'successfulDefActions'
   // salvo que confirmes que tu export trae ambas columnas por separado.
   defActions: ['defensive actions per 90', 'defensive actions'],
-  interceptions: ['interceptions per 90', 'interceptions'], clearances: ['clearances per 90', 'clearances'],
-  blocks: ['blocks per 90', 'blocks', 'shots blocked per 90'],
-  progRuns: ['progressive runs per 90', 'progressive runs'], crosses: ['crosses per 90', 'crosses'],
-  accCrosses: ['accurate crosses, %', 'accurate crosses %'], deepCompletedCrosses: ['deep completed crosses per 90', 'deep completed crosses'],
-  touchesFinalThird: ['touches in final third per 90', 'touches in final third'], deepCompletions: ['deep completions per 90', 'deep completions'],
-  crossesToGoalieBox: ['crosses to goalie box per 90', 'crosses to goalie box'], keyPasses: ['key passes per 90', 'key passes'],
-  xA: ['xa per 90', 'xa'], shotAssists: ['shot assists per 90', 'shot assists'],
-  successfulDribbles: ['successful dribbles, %', 'successful dribbles %'],
-  throughPasses: ['through passes per 90', 'through passes'], slidingTackles: ['sliding tackles per 90', 'sliding tackles'],
-  fouls: ['fouls per 90', 'fouls'],
-  goals: ['goals per 90', 'goals'], npGoals: ['non-penalty goals per 90', 'non penalty goals per 90'],
-  xG: ['xg per 90', 'xg'], shots: ['shots per 90', 'shots'], touchesBox: ['touches in box per 90', 'touches in box'],
-  dribbles: ['dribbles per 90', 'dribbles'], offDuels: ['offensive duels per 90', 'offensive duels'], offDuelsWon: ['offensive duels won, %', 'offensive duels won %'],
-  passesPenaltyArea: ['passes to penalty area per 90', 'passes to penalty area'], foulsSuffered: ['fouls suffered per 90', 'fouls suffered'],
-  shotsOnTarget: ['shots on target, %', 'shots on target %'], goalConversion: ['goal conversion, %', 'goal conversion %'],
-  receivedPasses: ['received passes per 90', 'received passes', 'passes received per 90', 'passes received'],
-  receivedLongPasses: ['received long passes per 90', 'received long passes'], headGoals: ['head goals per 90', 'head goals'],
+  interceptions: ['interceptions per 90', 'interceptions', 'interceptaciones/90'], clearances: ['clearances per 90', 'clearances'],
+  blocks: ['blocks per 90', 'blocks', 'shots blocked per 90', 'tiros interceptados/90'],
+  progRuns: ['progressive runs per 90', 'progressive runs', 'carreras en progresión/90'], crosses: ['crosses per 90', 'crosses', 'centros/90'],
+  accCrosses: ['accurate crosses, %', 'accurate crosses %', 'precisión centros, %'], deepCompletedCrosses: ['deep completed crosses per 90', 'deep completed crosses', 'centros desde el último tercio/90'],
+  touchesFinalThird: ['touches in final third per 90', 'touches in final third'], deepCompletions: ['deep completions per 90', 'deep completions', 'ataque en profundidad/90'],
+  crossesToGoalieBox: ['crosses to goalie box per 90', 'crosses to goalie box', 'centros al área pequeña/90'], keyPasses: ['key passes per 90', 'key passes', 'jugadas claves/90'],
+  xA: ['xa per 90', 'xa', 'xa/90'], shotAssists: ['shot assists per 90', 'shot assists', 'asistencias/90_1'],
+  successfulDribbles: ['successful dribbles, %', 'successful dribbles %', 'regates realizados, %'],
+  throughPasses: ['through passes per 90', 'through passes', 'pases en profundidad/90'], slidingTackles: ['sliding tackles per 90', 'sliding tackles', 'entradas/90'],
+  fouls: ['fouls per 90', 'fouls', 'faltas/90'],
+  goals: ['goals per 90', 'goals', 'goles/90'], npGoals: ['non-penalty goals per 90', 'non penalty goals per 90', 'goles, excepto los penaltis/90'],
+  xG: ['xg per 90', 'xg', 'xg/90'], shots: ['shots per 90', 'shots', 'remates/90'], touchesBox: ['touches in box per 90', 'touches in box', 'toques en el área de penalti/90'],
+  dribbles: ['dribbles per 90', 'dribbles', 'regates/90'], offDuels: ['offensive duels per 90', 'offensive duels', 'duelos atacantes/90'], offDuelsWon: ['offensive duels won, %', 'offensive duels won %', 'duelos atacantes ganados, %'],
+  passesPenaltyArea: ['passes to penalty area per 90', 'passes to penalty area', 'pases al área de penalti/90'], foulsSuffered: ['fouls suffered per 90', 'fouls suffered', 'faltas recibidas/90'],
+  shotsOnTarget: ['shots on target, %', 'shots on target %', 'tiros a la portería, %'], goalConversion: ['goal conversion, %', 'goal conversion %', 'goles hechos, %'],
+  receivedPasses: ['received passes per 90', 'received passes', 'passes received per 90', 'passes received', 'pases recibidos /90'],
+  receivedLongPasses: ['received long passes per 90', 'received long passes', 'pases largos recibidos/90'], headGoals: ['head goals per 90', 'head goals', 'goles de cabeza/90'],
   recoveriesOppHalf: ['recoveries in opposition half per 90', 'recoveries in opposition half'],
-  accelerations: ['accelerations per 90', 'accelerations'],
+  accelerations: ['accelerations per 90', 'accelerations', 'aceleraciones/90'],
 };
 
 export const PHYS = {
   maxSpeed: ['max speed'], hiDistance: ['hi distance per 90', 'hi distance'],
   sprintingDistance: ['sprinting distance per 90', 'sprint distance per 90', 'sprint distance'],
   countHighAccel: ['count high acceleration per 90', 'high accelerations per 90', 'high accelerations'],
-  accelerations: ['accelerations per 90', 'accelerations'],
+  accelerations: ['accelerations per 90', 'accelerations', 'aceleraciones/90'],
 };
 
 const W = (key, label, opts) => M(A[key], label, opts);
