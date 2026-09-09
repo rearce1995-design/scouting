@@ -319,10 +319,23 @@ const OPS = {
 
 function groupRows(){
   return state.rows.filter(r => state.filters.every(f => {
-    if(!f.col) return true;
+    // Un filtro recién agregado aún no debe excluir a nadie hasta que tenga
+    // columna y valor. Evita que un campo vacío convierta el grupo en cero.
+    if(!f.col || String(f.val ?? '').trim() === '') return true;
     const fn = OPS[f.op] || OPS['='];
     try{ return fn(r[f.col], f.val); }catch(e){ return true; }
   }));
+}
+
+function clearSelectedPlayer(){
+  state.selectedRow = null;
+  state.meta.displayName = '';
+  state.meta.age = '';
+  state.meta.selectedNationality = '';
+}
+
+function selectedPlayerIsInGroup(){
+  return !state.selectedRow || groupRows().includes(state.selectedRow);
 }
 
 function comparisonContextLabel(){
@@ -736,6 +749,16 @@ function buildStep2(){
 }
 
 function refreshCount(){
+  // Los filtros no sólo definen el percentil: también definen quién puede
+  // elegirse para graficar. Si el usuario cambia el filtro y el jugador que
+  // estaba abierto queda afuera, quitamos esa selección para no mezclar
+  // "jugador fuera del universo" con percentiles del universo filtrado.
+  if(!selectedPlayerIsInGroup()){
+    clearSelectedPlayer();
+    renderSidebar();
+    renderMain();
+    return;
+  }
   const badge = document.querySelector('#sidebar .pill-count');
   if(badge) badge.textContent = state.rows.length ? `${groupRows().length} jugadores` : '—';
 }
@@ -1053,7 +1076,10 @@ function playerLabel(row){
   return `${apellido}, ${inicial}.${club ? ' - ' + club : ''}`;
 }
 function sortedRowsForPicker(){
-  return state.rows.slice().sort((a,b) => {
+  // El selector de jugador usa el mismo universo que el cálculo del
+  // percentil. Antes se alimentaba de toda la tabla y permitía elegir, por
+  // ejemplo, un jugador de 29 años con el filtro "Edad <= 25" activo.
+  return groupRows().slice().sort((a,b) => {
     const A = parsePlayerName(a[state.playerCol]), B = parsePlayerName(b[state.playerCol]);
     const apCmp = A.apellido.localeCompare(B.apellido, 'es', {sensitivity:'base'});
     if(apCmp !== 0) return apCmp;
@@ -1092,7 +1118,7 @@ function buildStep4(){
     children.push(el('div', {}, [
       el('label', {class:'field-label', text:'Jugador'}),
       playerSel,
-      el('div', {class:'helptext', text:'Ordenados por Apellido, Inicial. - Club'})
+      el('div', {class:'helptext', text:'Sólo jugadores del grupo filtrado · ordenados por Apellido, Inicial. - Club'})
     ]));
 
     // Si el jugador tiene más de un país candidato (nace en uno, pasaporte
@@ -1358,6 +1384,12 @@ function buildMetricLayout(){
 
 function generateWheel(){
   if(!state.selectedRow){ alert('Elegí un jugador primero.'); return; }
+  if(!selectedPlayerIsInGroup()){
+    clearSelectedPlayer();
+    refreshAll();
+    alert('El jugador seleccionado no cumple los filtros actuales. Elegí uno del grupo de comparación.');
+    return;
+  }
   const hasMetrics = state.categories.some(c => c.metrics.some(m=>m.col));
   if(!hasMetrics){ alert('Agregá al menos una métrica en el paso 3.'); return; }
   renderMain();
