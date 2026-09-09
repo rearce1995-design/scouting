@@ -732,7 +732,24 @@ function buildStep2(){
     state.headers.forEach(h => colSel.appendChild(opt(h,h,f.col===h)));
     const opSel = el('select', {onchange:(e)=>{f.op=e.target.value; refreshAll();}});
     Object.keys(OPS).forEach(o => opSel.appendChild(opt(o,o,f.op===o)));
-    const valInput = el('input', {type:'text', placeholder:'valor', oninput:debounce((e)=>{f.val=e.target.value; refreshCount();}, 120)});
+    // No aplicamos el filtro en cada tecla: al escribir "26", el valor
+    // intermedio "2" podía vaciar el selector y dejarlo desactualizado al
+    // completar la cifra. Se confirma al salir del campo o con Enter.
+    const commitFilterValue = (value) => {
+      if(f.val === value) return;
+      f.val = value;
+      refreshAll();
+    };
+    const valInput = el('input', {
+      type:'text', placeholder:'valor',
+      onchange:(e)=>commitFilterValue(e.target.value),
+      onkeydown:(e)=>{
+        if(e.key === 'Enter'){
+          e.preventDefault();
+          commitFilterValue(e.target.value);
+        }
+      }
+    });
     valInput.value = f.val || '';
     const del = el('button', {class:'btn-icon', html:'&times;', onclick:()=>{ state.filters.splice(i,1); refreshAll(); }});
     children.push(el('div', {class:'rule'}, [colSel, opSel, valInput, del]));
@@ -743,7 +760,7 @@ function buildStep2(){
     refreshAll();
   }}));
 
-  children.push(el('div', {class:'helptext', text:'Sin filtros, el grupo es toda la tabla cargada. Ej: Posición contiene "CB", Minutos >= 500.'}));
+  children.push(el('div', {class:'helptext', text:'El filtro se aplica al salir del campo o al presionar Enter. Ej: Posición contiene "CB", Minutos >= 500.'}));
 
   return stepShell(2, 'Grupo de comparación', children);
 }
